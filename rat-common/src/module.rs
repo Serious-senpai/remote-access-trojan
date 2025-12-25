@@ -1,15 +1,30 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use log::{debug, error, info};
 use tokio::sync::SetOnce;
+
+pub struct ModuleState {
+    _stopped: SetOnce<()>,
+    _running: AtomicBool,
+}
+
+impl ModuleState {
+    pub fn new() -> Self {
+        Self {
+            _stopped: SetOnce::new(),
+            _running: AtomicBool::new(false),
+        }
+    }
+}
 
 #[async_trait]
 pub trait Module: Send + Sync {
     type EventType;
 
     fn name(&self) -> &str;
-    fn stopped(&self) -> Arc<SetOnce<()>>;
+    fn state(&self) -> Arc<ModuleState>;
 
     async fn listen(self: Arc<Self>) -> Self::EventType;
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()>;
@@ -22,7 +37,17 @@ pub trait Module: Send + Sync {
         Ok(())
     }
 
+    async fn wait_until_stopped(&self) {
+        self.state()._stopped.wait().await;
+    }
+
     async fn run(self: Arc<Self>) -> anyhow::Result<()> {
+        let state = self.state();
+        if state._running.swap(true, Ordering::AcqRel) {
+            error!("Module {} is already running", self.name());
+            return Ok(());
+        }
+
         debug!("Running before_hook for module {}", self.name());
         self.clone().before_hook().await.map_err(|e| {
             error!("Error in before_hook for module {}: {e}", self.name());
@@ -30,11 +55,11 @@ pub trait Module: Send + Sync {
         })?;
 
         info!("Running module {}", self.name());
-        while self.stopped().get().is_none() {
-            let stopped = self.stopped();
+        while state._stopped.get().is_none() {
+            let state = state.clone();
             let event = tokio::select! {
                 biased;
-                _ = stopped.wait() => break,
+                _ = state._stopped.wait() => break,
                 event = self.clone().listen() => event,
             };
 
@@ -51,15 +76,12 @@ pub trait Module: Send + Sync {
         })?;
 
         info!("Module {} completed successfully", self.name());
+        state._running.store(false, Ordering::Release);
         Ok(())
     }
 
     fn stop(&self) {
         info!("Stopping module {}", self.name());
-        if let Err(e) = self.stopped().set(()) {
-            error!("Error stopping module {}: {e}", self.name());
-        } else {
-            info!("Stop signal sent to module {}", self.name());
-        }
+        let _ = self.state()._stopped.set(());
     }
 }

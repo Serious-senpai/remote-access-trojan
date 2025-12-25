@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ClientMessage {}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ClientMessage {
+    Pong { value: u32 },
+}
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ServerMessage {}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ServerMessage {
+    Ping { value: u32 },
+}

@@ -6,11 +6,13 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive", "string"] }
 log = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
+rand = { workspace = true, features = ["thread_rng"] }
 rat-common = { path = "../rat-common" }
-serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal"] }
+simplelog = { workspace = true, features = ["local-offset"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "time"] }
 
 [lints]
 workspace = true

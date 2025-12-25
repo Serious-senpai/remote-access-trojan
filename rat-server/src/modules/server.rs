@@ -5,27 +5,40 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::info;
-use rat_common::module::Module;
-use tokio::net::{TcpListener, TcpStream, tcp};
-use tokio::sync::{RwLock, SetOnce, mpsc};
+use rat_common::messages::ClientMessage;
+use rat_common::module::{Module, ModuleState};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
+use tokio::sync::{Mutex, mpsc};
+use tokio::task::JoinHandle;
 
-use crate::messages::Message;
-use crate::modules::sender::Sender;
+use crate::modules::connection::connector::Connector;
+use crate::modules::console::Console;
+
+const _MAX_QUEUED_MESSAGES: usize = 100;
 
 pub struct Server {
     _listener: TcpListener,
-    _stopped: Arc<SetOnce<()>>,
-    _senders: RwLock<HashMap<SocketAddr, (Arc<Sender>, mpsc::Sender<Message>)>>,
+    _console: Arc<Console>,
+    _console_task: Mutex<Option<JoinHandle<()>>>,
+    _sender: mpsc::Sender<(SocketAddr, ClientMessage)>,
+    _receiver: Mutex<mpsc::Receiver<(SocketAddr, ClientMessage)>>,
+    _clients: Mutex<HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>>,
+    _state: Arc<ModuleState>,
 }
 
 impl Server {
-    pub async fn new(addr: &str) -> anyhow::Result<Self> {
+    pub async fn bind<A: ToSocketAddrs>(addr: A) -> anyhow::Result<Arc<Self>> {
         let listener = TcpListener::bind(addr).await?;
-        Ok(Self {
+        let (sender, receiver) = mpsc::channel(_MAX_QUEUED_MESSAGES);
+        Ok(Arc::new_cyclic(|this| Self {
             _listener: listener,
-            _stopped: Arc::new(SetOnce::new()),
-            _senders: RwLock::new(HashMap::new()),
-        })
+            _console: Arc::new(Console::new(this.clone())),
+            _console_task: Mutex::new(None),
+            _sender: sender,
+            _receiver: Mutex::new(receiver),
+            _clients: Mutex::new(HashMap::new()),
+            _state: Arc::new(ModuleState::new()),
+        }))
     }
 }
 
@@ -37,8 +50,8 @@ impl Module for Server {
         "Server"
     }
 
-    fn stopped(&self) -> Arc<SetOnce<()>> {
-        self._stopped.clone()
+    fn state(&self) -> Arc<ModuleState> {
+        self._state.clone()
     }
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
@@ -49,21 +62,49 @@ impl Module for Server {
         let (stream, addr) = event?;
         info!("New connection from {addr}");
 
-        let (tcp_read, tcp_write) = stream.into_split();
-        let (internal_send, internal_receive) = mpsc::channel(3);
-        let sender = Arc::new(Sender::new(tcp_write, internal_receive));
+        let connector = Arc::new(Connector::new(stream, addr, self._sender.clone()));
+        let connector_cloned = connector.clone();
 
-        let mut senders = self._senders.write().await;
-        senders.insert(addr, (sender.clone(), internal_send));
+        let self_cloned = self.clone();
+        let handle = tokio::spawn(async move {
+            let _ = connector_cloned.run().await;
+
+            let mut clients = self_cloned._clients.lock().await;
+            let _ = clients.remove(&addr);
+            info!("{addr} disconnected");
+        });
+
+        let mut clients = self._clients.lock().await;
+        clients.insert(addr, (connector, handle));
 
         Ok(())
     }
 
     async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        let console_cloned = self._console.clone();
+        let handle = tokio::spawn(async move {
+            let _ = console_cloned.run().await;
+        });
+
+        let mut console_task = self._console_task.lock().await;
+        *console_task = Some(handle);
+
         Ok(())
     }
 
     async fn after_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        let mut console_task = self._console_task.lock().await;
+        if let Some(handle) = console_task.take() {
+            self._console.stop();
+            let _ = handle.await;
+        }
+
+        let mut clients = self._clients.lock().await;
+        for (_, (connector, handle)) in clients.drain() {
+            connector.stop();
+            let _ = handle.await;
+        }
+
         Ok(())
     }
 }
