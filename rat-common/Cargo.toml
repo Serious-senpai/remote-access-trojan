@@ -1,0 +1,14 @@
+[package]
+name = "rat-common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "rat-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+postcard = { workspace = true, features = ["use-std"] }
+rat-common = { path = "../rat-common" }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal"] }
+
+[lints]
+workspace = true
