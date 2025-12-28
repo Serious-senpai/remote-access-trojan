@@ -1,17 +1,19 @@
 [package]
 name = "rat-server"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-clap = { workspace = true, features = ["derive", "string"] }
 log = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 rand = { workspace = true, features = ["thread_rng"] }
 rat-common = { path = "../rat-common" }
-simplelog = { workspace = true, features = ["local-offset"] }
+simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "time"] }
 
 [lints]

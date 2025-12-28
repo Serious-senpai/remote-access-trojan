@@ -12,14 +12,11 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 
 use crate::modules::connection::connector::Connector;
-use crate::modules::console::Console;
 
 const _MAX_QUEUED_MESSAGES: usize = 100;
 
 pub struct Server {
     _listener: TcpListener,
-    _console: Arc<Console>,
-    _console_task: Mutex<Option<JoinHandle<()>>>,
     _sender: mpsc::Sender<(SocketAddr, ClientMessage)>,
     _receiver: Mutex<mpsc::Receiver<(SocketAddr, ClientMessage)>>,
     _clients: Mutex<HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>>,
@@ -30,10 +27,8 @@ impl Server {
     pub async fn bind<A: ToSocketAddrs>(addr: A) -> anyhow::Result<Arc<Self>> {
         let listener = TcpListener::bind(addr).await?;
         let (sender, receiver) = mpsc::channel(_MAX_QUEUED_MESSAGES);
-        Ok(Arc::new_cyclic(|this| Self {
+        Ok(Arc::new(Self {
             _listener: listener,
-            _console: Arc::new(Console::new(this.clone())),
-            _console_task: Mutex::new(None),
             _sender: sender,
             _receiver: Mutex::new(receiver),
             _clients: Mutex::new(HashMap::new()),
@@ -80,28 +75,20 @@ impl Module for Server {
         Ok(())
     }
 
-    async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        let console_cloned = self._console.clone();
-        let handle = tokio::spawn(async move {
-            let _ = console_cloned.run().await;
-        });
-
-        let mut console_task = self._console_task.lock().await;
-        *console_task = Some(handle);
-
-        Ok(())
-    }
-
     async fn after_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        let mut console_task = self._console_task.lock().await;
-        if let Some(handle) = console_task.take() {
-            self._console.stop();
-            let _ = handle.await;
-        }
+        let mut handles = vec![];
 
         let mut clients = self._clients.lock().await;
         for (_, (connector, handle)) in clients.drain() {
             connector.stop();
+
+            // Do not wait for handles here to avoid deadlocks
+            handles.push(handle);
+        }
+
+        drop(clients);
+
+        for handle in handles {
             let _ = handle.await;
         }
 

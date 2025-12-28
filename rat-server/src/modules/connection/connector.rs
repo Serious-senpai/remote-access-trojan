@@ -1,28 +1,30 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use log::{debug, warn};
 use rat_common::messages::{ClientMessage, ServerMessage};
 use rat_common::module::{Module, ModuleState};
 use rat_common::utils::acquire_free_mutex;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 
 use crate::modules::connection::receiver::Receiver;
-use crate::modules::connection::sender::Sender;
 
-const BASE_PING_INTERVAL_MS: u64 = 10000;
-const PING_INTERVAL_ADDITIVE_JITTER_MS: u64 = 30000;
+const BASE_PING_INTERVAL_MS: u64 = 1000;
+const PING_INTERVAL_ADDITIVE_JITTER_MS: u64 = 3000;
 const PING_TIMEOUT: Duration = Duration::from_millis(3000);
 
 pub struct Connector {
     _peer: SocketAddr,
-    _sender: Arc<Sender>,
+    _tcp_send: Mutex<OwnedWriteHalf>,
     _receiver: Arc<Receiver>,
-    _tasks: Mutex<Vec<JoinHandle<()>>>,
+    _receiver_task: Mutex<Option<JoinHandle<()>>>,
     _state: Arc<ModuleState>,
 }
 
@@ -33,20 +35,27 @@ impl Connector {
         incoming: mpsc::Sender<(SocketAddr, ClientMessage)>,
     ) -> Self {
         let (read, write) = stream.into_split();
-        let sender = Arc::new(Sender::new(write));
         let receiver = Arc::new(Receiver::new(peer, read, incoming));
 
         Self {
             _peer: peer,
-            _sender: sender,
+            _tcp_send: Mutex::new(write),
             _receiver: receiver,
-            _tasks: Mutex::new(vec![]),
+            _receiver_task: Mutex::new(None),
             _state: Arc::new(ModuleState::new()),
         }
     }
 
     pub async fn send(&self, message: &ServerMessage) -> anyhow::Result<()> {
-        self._sender.send(message).await
+        let bytes = postcard::to_stdvec_cobs(message)?;
+
+        let mut tcp = self._tcp_send.lock().await;
+        if let Err(e) = tcp.write_all(&bytes).await {
+            self.stop();
+            return Err(e.into());
+        }
+
+        Ok(())
     }
 
     pub async fn wait_for<F: Fn(&ClientMessage) -> bool + Send + Sync + 'static>(
@@ -89,12 +98,21 @@ impl Module for Connector {
             )
             .await
         });
+
+        let start = Instant::now();
         if let Err(e) = self.send(&ServerMessage::Ping { value: ping }).await {
             self.stop();
             return Err(e);
         }
 
-        if wait_for_pong.await.is_err() {
+        let wait_for_pong = wait_for_pong.await;
+        let end = Instant::now();
+        debug!("RTT to {}: {:?}", self._peer, end - start);
+
+        if let Ok(Ok(_)) = wait_for_pong {
+            // pass
+        } else {
+            warn!("Ping to {} timed out", self._peer);
             self.stop();
         }
 
@@ -102,15 +120,9 @@ impl Module for Connector {
     }
 
     async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        let mut tasks = acquire_free_mutex(&self._tasks);
-
-        let sender = self._sender.clone();
-        tasks.push(tokio::spawn(async move {
-            let _ = sender.run().await;
-        }));
-
         let receiver = self._receiver.clone();
-        tasks.push(tokio::spawn(async move {
+        let mut task = acquire_free_mutex(&self._receiver_task);
+        *task = Some(tokio::spawn(async move {
             let _ = receiver.run().await;
         }));
 
@@ -118,11 +130,10 @@ impl Module for Connector {
     }
 
     async fn after_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        self._sender.stop();
         self._receiver.stop();
 
-        let mut tasks = acquire_free_mutex(&self._tasks);
-        while let Some(task) = tasks.pop() {
+        let mut task = acquire_free_mutex(&self._receiver_task);
+        if let Some(task) = task.take() {
             let _ = task.await;
         }
 

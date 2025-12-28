@@ -44,8 +44,10 @@ impl Receiver {
         predicate: F,
     ) -> Option<ClientMessage> {
         let (send, receive) = oneshot::channel();
+
         let mut waiters = self._custom_waits.lock().await;
         waiters.push_back((Box::new(predicate), send));
+        drop(waiters);
 
         receive.await.ok()
     }
@@ -75,6 +77,7 @@ impl Module for Receiver {
         let new_data = match event {
             Ok(d) => d,
             Err(e) => {
+                // recv error, most likely the connection was closed by peer
                 self.stop();
                 return Err(e.into());
             }
@@ -92,6 +95,7 @@ impl Module for Receiver {
                         for (_, sender) in waiters.extract_if(|(pred, _)| pred(&message)) {
                             let _ = sender.send(message.clone());
                         }
+                        drop(waiters);
 
                         self._incoming.send((self._peer, message)).await?;
                     }
