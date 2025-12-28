@@ -14,12 +14,13 @@ use tokio::task::JoinHandle;
 use crate::modules::connection::connector::Connector;
 
 const _MAX_QUEUED_MESSAGES: usize = 100;
+type _ClientMap = HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>;
 
 pub struct Server {
     _listener: TcpListener,
     _sender: mpsc::Sender<(SocketAddr, ClientMessage)>,
     _receiver: Mutex<mpsc::Receiver<(SocketAddr, ClientMessage)>>,
-    _clients: Mutex<HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>>,
+    _clients: Mutex<_ClientMap>,
     _state: Arc<ModuleState>,
 }
 

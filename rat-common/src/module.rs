@@ -19,6 +19,12 @@ impl ModuleState {
     }
 }
 
+impl Default for ModuleState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 pub trait Module: Send + Sync {
     type EventType;

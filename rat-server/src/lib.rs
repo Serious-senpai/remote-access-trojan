@@ -23,6 +23,8 @@ pub struct ServerHandle {
     _private: [u8; 0],
 }
 
+/// # Safety
+/// The `log_path` pointer must be a valid null-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn initialize_logger(level: c_int, log_path: *const c_char) -> c_int {
     let level = match level {
@@ -44,12 +46,7 @@ pub unsafe extern "C" fn initialize_logger(level: c_int, log_path: *const c_char
         .unwrap_or_else(|e| e)
         .build();
 
-    match OpenOptions::new()
-        .append(true)
-        .create(true)
-        .write(true)
-        .open(log_path)
-    {
+    match OpenOptions::new().append(true).create(true).open(log_path) {
         Ok(file) => {
             if let Err(e) = CombinedLogger::init(vec![
                 WriteLogger::new(level, config.clone(), file),
@@ -74,6 +71,8 @@ fn _report_initialization<T>(send: &mpsc::SyncSender<T>, value: T) {
     }
 }
 
+/// # Safety
+/// The `address` pointer must be a valid null-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn start_server(address: *const c_char) -> *mut ServerHandle {
     let address = unsafe { CStr::from_ptr(address) }
@@ -121,6 +120,8 @@ pub unsafe extern "C" fn start_server(address: *const c_char) -> *mut ServerHand
     }
 }
 
+/// # Safety
+/// The `server` pointer must be a pointer returned by [`start_server`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stop_server(server: *mut ServerHandle) {
     let server = server as *mut _Server;
