@@ -12,13 +12,15 @@ use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
+use crate::message::InternalMessage;
+
 type _Predicate = dyn Fn(&ClientMessage) -> bool + Send + Sync + 'static;
 
 pub struct Receiver {
     _peer: SocketAddr,
     _tcp: Mutex<OwnedReadHalf>,
     _current_buffer: Mutex<Vec<u8>>,
-    _incoming: mpsc::Sender<(SocketAddr, ClientMessage)>,
+    _notifier: mpsc::Sender<InternalMessage>,
     _custom_waits: Mutex<LinkedList<(Box<_Predicate>, oneshot::Sender<ClientMessage>)>>,
     _state: Arc<ModuleState>,
 }
@@ -27,13 +29,13 @@ impl Receiver {
     pub fn new(
         peer: SocketAddr,
         tcp: OwnedReadHalf,
-        incoming: mpsc::Sender<(SocketAddr, ClientMessage)>,
+        notifier: mpsc::Sender<InternalMessage>,
     ) -> Self {
         Self {
             _peer: peer,
             _tcp: Mutex::new(tcp),
             _current_buffer: Mutex::new(vec![]),
-            _incoming: incoming,
+            _notifier: notifier,
             _custom_waits: Mutex::new(LinkedList::new()),
             _state: Arc::new(ModuleState::new()),
         }
@@ -97,7 +99,12 @@ impl Module for Receiver {
                         }
                         drop(waiters);
 
-                        self._incoming.send((self._peer, message)).await?;
+                        self._notifier
+                            .send(InternalMessage::Message {
+                                peer: self._peer,
+                                data: message,
+                            })
+                            .await?;
                     }
                     Err(e) => warn!("Failed to deserialize message from {e}: {}", self._peer),
                 }

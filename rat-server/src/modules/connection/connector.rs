@@ -14,6 +14,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 
+use crate::message::InternalMessage;
 use crate::modules::connection::receiver::Receiver;
 
 const BASE_PING_INTERVAL_MS: u64 = 1000;
@@ -32,10 +33,10 @@ impl Connector {
     pub fn new(
         stream: TcpStream,
         peer: SocketAddr,
-        incoming: mpsc::Sender<(SocketAddr, ClientMessage)>,
+        notifier: mpsc::Sender<InternalMessage>,
     ) -> Self {
         let (read, write) = stream.into_split();
-        let receiver = Arc::new(Receiver::new(peer, read, incoming));
+        let receiver = Arc::new(Receiver::new(peer, read, notifier));
 
         Self {
             _peer: peer,
