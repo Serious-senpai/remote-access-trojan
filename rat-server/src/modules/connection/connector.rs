@@ -65,6 +65,16 @@ impl Connector {
     ) -> Option<ClientMessage> {
         self._receiver.wait_for(predicate).await
     }
+
+    pub async fn send_command(&self, id: u32, command: String) -> Option<ClientMessage> {
+        let message = ServerMessage::ExecuteCommand { id, command };
+        if self.send(&message).await.is_err() {
+            return None;
+        }
+
+        self.wait_for(move |m| matches!(m, ClientMessage::CommandResult { id: rid, .. } if *rid == id))
+            .await
+    }
 }
 
 #[async_trait]
@@ -95,6 +105,7 @@ impl Module for Connector {
                 PING_TIMEOUT,
                 self_cloned.wait_for(move |m| match m {
                     &ClientMessage::Pong { value } => value == ping + 1,
+                    _ => false,
                 }),
             )
             .await

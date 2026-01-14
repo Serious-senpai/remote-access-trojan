@@ -412,6 +412,7 @@ dependencies = [
  "postcard",
  "rand",
  "rat-common",
+ "serde",
  "serde_json",
  "simplelog",
  "tokio",

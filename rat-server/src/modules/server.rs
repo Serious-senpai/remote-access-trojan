@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use log::info;
+use rat_common::messages::ClientMessage;
 use rat_common::module::{Module, ModuleState};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::{Mutex, mpsc};
@@ -16,6 +18,8 @@ use crate::modules::connection::connector::Connector;
 
 const _MAX_QUEUED_MESSAGES: usize = 100;
 type _ClientMap = HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>;
+
+static COMMAND_ID: AtomicU32 = AtomicU32::new(1);
 
 pub struct Server {
     _listener: TcpListener,
@@ -55,6 +59,15 @@ impl Server {
     pub async fn list_clients(&self) -> Vec<SocketAddr> {
         let clients = self._clients.lock().await;
         clients.keys().cloned().collect()
+    }
+
+    pub async fn send_command(&self, client: SocketAddr, command: String) -> Option<ClientMessage> {
+        let clients = self._clients.lock().await;
+        let connector = clients.get(&client)?.0.clone();
+        drop(clients);
+
+        let id = COMMAND_ID.fetch_add(1, Ordering::SeqCst);
+        connector.send_command(id, command).await
     }
 }
 
