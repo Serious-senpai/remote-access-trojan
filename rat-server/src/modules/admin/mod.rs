@@ -1,42 +1,48 @@
-mod service;
+pub mod api;
 
-use std::io;
-use std::net::SocketAddr;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use hyper::server::conn::http1;
-use hyper_util::rt::TokioIo;
 use log::error;
-use rat_common::module::{Module, ModuleState};
-use tokio::net::{TcpListener, TcpStream};
+use poem::listener::TcpListener;
+use poem::{Route, Server};
+use poem_openapi::OpenApiService;
+use rat_common::module::{ModuleImpl, ModuleState};
+use tokio::net::ToSocketAddrs;
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
-use crate::modules::server::Server;
-
-pub struct Admin {
-    _listener: TcpListener,
-    _service: Arc<service::AdminService>,
+pub struct AdminServer<A>
+where
+    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+{
+    _address: A,
+    _task: Mutex<Option<JoinHandle<()>>>,
     _state: Arc<ModuleState>,
 }
 
-impl Admin {
-    pub fn new(server: Weak<Server>, listener: TcpListener) -> Self {
-        let service = Arc::new(service::AdminService::new(server));
-
-        Self {
-            _listener: listener,
-            _service: service,
-            _state: Arc::new(ModuleState::new()),
-        }
+impl<A> AdminServer<A>
+where
+    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+{
+    pub async fn bind(addr: A) -> anyhow::Result<Arc<Self>> {
+        Ok(Arc::new(Self {
+            _address: addr,
+            _task: Mutex::new(None),
+            _state: ModuleState::new(),
+        }))
     }
 }
 
 #[async_trait]
-impl Module for Admin {
-    type EventType = io::Result<(TcpStream, SocketAddr)>;
+impl<A> ModuleImpl for AdminServer<A>
+where
+    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+{
+    type EventType = ();
 
     fn name(&self) -> &str {
-        "Admin"
+        "Admin Server"
     }
 
     fn state(&self) -> Arc<ModuleState> {
@@ -44,19 +50,43 @@ impl Module for Admin {
     }
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
-        self._listener.accept().await
+        self.wait_until_stopped().await
     }
 
-    async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
-        let (stream, addr) = event?;
-        let io = TokioIo::new(stream);
+    async fn handle(self: Arc<Self>, _event: Self::EventType) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-        let service = self._service.clone();
-        tokio::spawn(async move {
-            if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
-                error!("Error serving admin connection from {addr}: {e}");
+    async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        let api_service = OpenApiService::new(api::AdminAPI, "Admin API", "1.0");
+        let docs = api_service.swagger_ui();
+
+        let app = Route::new().nest("/", api_service).nest("/docs", docs);
+        let server = Server::new(TcpListener::bind(self._address.clone()));
+
+        let self_cloned = self.clone();
+        *self._task.lock().await = Some(tokio::spawn(async move {
+            if let Err(e) = server
+                .run_with_graceful_shutdown(
+                    app,
+                    async {
+                        self_cloned.wait_until_stopped().await;
+                    },
+                    None,
+                )
+                .await
+            {
+                error!("OpenAPI server error: {e}");
             }
-        });
+        }));
+
+        Ok(())
+    }
+
+    async fn after_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        if let Some(task) = self._task.lock().await.take() {
+            task.await?;
+        }
 
         Ok(())
     }

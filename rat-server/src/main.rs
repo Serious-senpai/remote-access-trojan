@@ -13,8 +13,8 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting server: {arguments:?}");
     let server = Server::bind(
-        ("0.0.0.0", arguments.port),
         ("127.0.0.1", arguments.admin_port),
+        ("0.0.0.0", arguments.port),
     )
     .await?;
 

