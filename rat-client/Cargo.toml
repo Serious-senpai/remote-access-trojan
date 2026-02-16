@@ -7,6 +7,7 @@ edition.workspace = true
 anyhow = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
+sysinfo = { workspace = true, features = ["system"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread"] }
 
 [lints]
