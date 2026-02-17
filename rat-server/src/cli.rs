@@ -10,19 +10,27 @@ use log::LevelFilter;
     version = crate_version!(),
 )]
 pub struct Arguments {
-    /// Port of the RAT server for clients to connect to
-    #[arg(long, default_value_t = 12110)]
+    /// Port of the RAT server for clients to connect to.
+    #[arg(short, long, default_value_t = 12110)]
     pub port: u16,
 
-    /// Port of the frontend server for the admin interface
+    /// Port of the frontend server for the admin interface.
     #[arg(long, default_value_t = 12111)]
     pub admin_port: u16,
 
-    /// The logging level
+    /// The logging level.
     #[arg(long, default_value_t = LevelFilter::Info)]
     pub log_level: LevelFilter,
 
-    /// Path to the log file
+    /// Path to the log file.
     #[arg(long, default_value = "target/server.log")]
     pub log_path: PathBuf,
+
+    /// Server-to-client heartbeat interval in milliseconds. Set to 0 to disable heartbeats.
+    #[arg(long, default_value_t = 25000)]
+    pub heartbeat_interval: u64,
+
+    /// Server-to-client request timeout in milliseconds.
+    #[arg(long, default_value_t = 5000)]
+    pub request_timeout: u64,
 }

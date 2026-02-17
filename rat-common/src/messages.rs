@@ -2,10 +2,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SystemInfo {
-    pub name: String,
-    pub kernel_version: String,
-    pub os_version: String,
-    pub host_name: String,
+    pub boot_time: u64,
+    pub cpu_arch: String,
+    pub distribution_id: String,
+    pub host_name: Option<String>,
+    pub kernel_long_version: String,
+    pub kernel_version: Option<String>,
+    pub long_os_version: Option<String>,
+    pub name: Option<String>,
+    pub open_files_limit: Option<usize>,
+    pub os_version: Option<String>,
+    pub physical_core_count: Option<usize>,
+    pub uptime: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

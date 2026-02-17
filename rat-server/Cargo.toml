@@ -11,9 +11,7 @@ log = { workspace = true }
 poem = { workspace = true }
 poem-openapi = { workspace = true, features = ["swagger-ui"] }
 postcard = { workspace = true, features = ["use-std"] }
-rand = { workspace = true, features = ["thread_rng"] }
 rat-common = { path = "../rat-common" }
-simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
 
 [lints]

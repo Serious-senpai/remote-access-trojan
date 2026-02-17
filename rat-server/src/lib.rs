@@ -1,4 +1,4 @@
 pub mod cli;
-pub mod logger;
+pub mod config;
 pub mod message;
 pub mod modules;

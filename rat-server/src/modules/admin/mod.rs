@@ -7,14 +7,14 @@ use log::error;
 use poem::listener::TcpListener;
 use poem::{Route, Server};
 use poem_openapi::OpenApiService;
-use rat_common::module::{ModuleImpl, ModuleState};
-use tokio::net::ToSocketAddrs;
+use rat_common::framework::{ModuleImpl, ModuleState};
+use rat_common::types::PortableSocketAddrs;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 pub struct AdminServer<A>
 where
-    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+    A: PortableSocketAddrs,
 {
     _address: A,
     _task: Mutex<Option<JoinHandle<()>>>,
@@ -23,7 +23,7 @@ where
 
 impl<A> AdminServer<A>
 where
-    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+    A: PortableSocketAddrs,
 {
     pub async fn bind(addr: A) -> anyhow::Result<Arc<Self>> {
         Ok(Arc::new(Self {
@@ -37,7 +37,7 @@ where
 #[async_trait]
 impl<A> ModuleImpl for AdminServer<A>
 where
-    A: ToSocketAddrs + Clone + Send + Sync + 'static,
+    A: PortableSocketAddrs,
 {
     type EventType = ();
 
@@ -65,11 +65,11 @@ where
         let server = Server::new(TcpListener::bind(self._address.clone()));
 
         let self_cloned = self.clone();
-        *self._task.lock().await = Some(tokio::spawn(async move {
+        self._task.lock().await.replace(tokio::spawn(async move {
             if let Err(e) = server
                 .run_with_graceful_shutdown(
                     app,
-                    async {
+                    async move {
                         self_cloned.wait_until_stopped().await;
                     },
                     None,

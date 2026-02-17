@@ -1,29 +1,35 @@
 mod client;
+mod listener;
+mod ping;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{debug, warn};
-use rat_common::module::{ModuleImpl, ModuleState};
+use rat_common::framework::{ModuleImpl, ModuleState};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::RwLock;
 
+use crate::config::Config;
 use crate::modules::cc::client::ClientConnector;
 
 pub struct CCServer {
     _listener: TcpListener,
+    _config: Config,
     _clients: RwLock<HashMap<SocketAddr, Arc<ClientConnector>>>,
     _state: Arc<ModuleState>,
 }
 
 impl CCServer {
-    pub async fn bind<A: ToSocketAddrs>(addr: A) -> anyhow::Result<Arc<Self>> {
+    pub async fn bind<A: ToSocketAddrs>(addr: A, config: Config) -> anyhow::Result<Arc<Self>> {
         let listener = TcpListener::bind(addr).await?;
         Ok(Arc::new(Self {
             _listener: listener,
+            _config: config,
             _clients: RwLock::new(HashMap::new()),
             _state: ModuleState::new(),
         }))
@@ -50,14 +56,14 @@ impl ModuleImpl for CCServer {
         let (stream, addr) = event?;
 
         let mut clients = self._clients.write().await;
-        if clients.contains_key(&addr) {
-            warn!("Client {addr} is trying to connect more than once. Ignoring.");
-        } else {
-            let client = Arc::new(ClientConnector::new(stream, addr));
+        if let Entry::Vacant(e) = clients.entry(addr) {
+            let client = ClientConnector::new(stream, addr, self._config);
             self.add_submodule(client.clone()).await;
-            clients.insert(addr, client);
+            e.insert(client);
 
             debug!("Accepted new connection from {addr}");
+        } else {
+            warn!("Client {addr} is trying to connect more than once. Ignoring.");
         }
 
         Ok(())

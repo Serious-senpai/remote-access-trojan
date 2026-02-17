@@ -1,31 +1,29 @@
-use rat_common::messages::{ClientMessage, ServerMessage, SystemInfo};
-use sysinfo::System;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use std::sync::Arc;
+
+use clap::Parser;
+use log::info;
+use rat_client::cli::Arguments;
+use rat_client::client::Client;
+use rat_common::framework::Module;
+use rat_common::logger::initialize_logger;
+use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut stream = TcpStream::connect("127.0.0.1:12110").await?;
-    let mut buffer = vec![0u8; 1024];
+    let arguments = Arguments::parse();
+    initialize_logger(arguments.log_level, &arguments.log_path)?;
 
-    stream.writable().await?;
+    info!("Starting client: {arguments:?}");
+    let client = Arc::new(Client::connect(arguments.host).await);
 
-    let message = ClientMessage::SystemInfoUpdate {
-        info: SystemInfo {
-            name: System::name().unwrap_or_default(),
-            kernel_version: System::kernel_version().unwrap_or_default(),
-            os_version: System::os_version().unwrap_or_default(),
-            host_name: System::host_name().unwrap_or_default(),
-        },
-    };
-    let bytes = postcard::to_allocvec_cobs(&message)?;
-    stream.write_all(&bytes).await?;
+    let client_c = client.clone();
+    tokio::spawn(async move {
+        let _ = signal::ctrl_c().await;
+        info!("Received Ctrl-C signal.");
+        client_c.stop();
+    });
 
-    stream.readable().await?;
+    client.run().await?;
 
-    loop {
-        let n = stream.read(&mut buffer).await?;
-        let message = postcard::from_bytes_cobs::<ServerMessage>(&mut buffer[..n])?;
-        println!("{message:?}");
-    }
+    Ok(())
 }

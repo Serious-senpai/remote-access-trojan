@@ -4,8 +4,8 @@ use std::sync::atomic::Ordering;
 use async_trait::async_trait;
 use log::{debug, error, info};
 
-use crate::module::module_impl::ModuleImpl;
-use crate::module::module_state::ModuleState;
+use crate::framework::module_impl::ModuleImpl;
+use crate::framework::module_state::ModuleState;
 
 #[async_trait]
 pub trait Module: Send + Sync {
@@ -37,7 +37,9 @@ where
             return Ok(());
         }
 
-        if !state.stopped() {
+        if state.stopped() {
+            error!("Module {} is already stopped", self.name());
+        } else {
             debug!("Running before_hook for module {}", self.name());
             self.clone().before_hook().await.map_err(|e| {
                 error!("Error in before_hook for module {}: {e}", self.name());
@@ -69,8 +71,6 @@ where
             })?;
 
             info!("Module {} completed successfully", self.name());
-        } else {
-            error!("Module {} is already stopped", self.name());
         }
 
         state.running.store(false, Ordering::Release);
@@ -78,7 +78,7 @@ where
     }
 
     fn stop(&self) {
-        let _ = self.state().stop();
+        self.state().stop();
     }
 }
 

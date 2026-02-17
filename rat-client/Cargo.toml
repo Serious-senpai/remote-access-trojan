@@ -5,10 +5,13 @@ edition.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["cargo", "derive", "error-context", "help", "usage"] }
+log = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
 sysinfo = { workspace = true, features = ["system"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
 
 [lints]
 workspace = true

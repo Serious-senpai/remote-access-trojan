@@ -7,8 +7,9 @@ edition.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["rt", "sync"] }
+serde = { workspace = true, features = ["derive", "std"] }
+simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync"] }
 
 [lints]
 workspace = true

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::module::Module;
-use crate::module::module_state::ModuleState;
+use crate::framework::Module;
+use crate::framework::module_state::ModuleState;
 
 #[async_trait]
 pub trait ModuleImpl: Send + Sync {
