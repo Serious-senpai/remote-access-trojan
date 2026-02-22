@@ -11,6 +11,7 @@ use crate::framework::module_state::ModuleState;
 pub trait Module: Send + Sync {
     fn name(&self) -> &str;
     fn state(&self) -> Arc<ModuleState>;
+    fn is_running(&self) -> bool;
 
     async fn run(self: Arc<Self>) -> anyhow::Result<()>;
 
@@ -30,6 +31,10 @@ where
         ModuleImpl::state(self)
     }
 
+    fn is_running(&self) -> bool {
+        ModuleImpl::is_running(self)
+    }
+
     async fn run(self: Arc<Self>) -> anyhow::Result<()> {
         let state = self.state();
         if state.running.swap(true, Ordering::AcqRel) {
@@ -46,13 +51,22 @@ where
                 e
             })?;
 
-            self.state().start_all_submodules().await;
+            state.clone().start_all_submodules().await;
 
             info!("Running module {}", self.name());
+            let mut submodules_removed = state.subscribe_submodules_removed();
             while !state.stopped() {
                 let event = tokio::select! {
                     biased;
                     _ = self.wait_until_stopped() => break,
+                    Ok(_) = submodules_removed.changed() => {
+                        debug!("Running submodules_remove_hook for module {}", self.name());
+                        if let Err(e) = ModuleImpl::submodules_remove_hook(self.clone()).await {
+                            error!("Error in submodules_remove_hook for module {}: {e}", self.name());
+                        }
+
+                        continue;
+                    },
                     event = self.clone().listen() => event,
                 };
 
@@ -62,7 +76,7 @@ where
                 }
             }
 
-            self.state().stop_all_submodules().await;
+            state.stop_all_submodules().await;
 
             debug!("Running after_hook for module {}", self.name());
             self.clone().after_hook().await.map_err(|e| {

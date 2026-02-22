@@ -1,4 +1,4 @@
-use rat_common::messages::ClientMessage;
+use rat_common::schema::ClientMessage;
 use tokio::sync::oneshot;
 
 pub struct ClientMessageListener {

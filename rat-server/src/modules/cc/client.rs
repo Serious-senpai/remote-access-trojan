@@ -3,13 +3,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::{debug, error, warn};
+use log::{debug, error};
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
-use rat_common::messages::{ClientMessage, ServerMessage, SystemInfo};
-use rat_common::utils::TcpReader;
+use rat_common::reader::Reader;
+use rat_common::schema::{
+    ClientMessage, ClientMessageData, ServerMessage, ServerMessageData, SystemInfo,
+};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tokio::time::timeout;
 
@@ -18,7 +20,7 @@ use crate::modules::cc::listener::ClientMessageListener;
 use crate::modules::cc::ping::ClientPing;
 
 pub struct ClientConnector {
-    _reader: Mutex<TcpReader>,
+    _reader: Mutex<Reader<OwnedReadHalf>>,
     _info: RwLock<Option<SystemInfo>>,
     _writer: Mutex<OwnedWriteHalf>,
     _peer: SocketAddr,
@@ -33,7 +35,7 @@ impl ClientConnector {
     pub fn new(stream: TcpStream, peer: SocketAddr, config: Config) -> Arc<Self> {
         let (reader, writer) = stream.into_split();
         Arc::new_cyclic(|this| Self {
-            _reader: Mutex::new(TcpReader::new(reader)),
+            _reader: Mutex::new(Reader::new(reader)),
             _info: RwLock::new(None),
             _writer: Mutex::new(writer),
             _peer: peer,
@@ -49,15 +51,12 @@ impl ClientConnector {
         })
     }
 
-    async fn _process_message(&self, message: ClientMessage) -> anyhow::Result<()> {
-        println!("{message:?}");
-        match &message {
-            ClientMessage::SystemInfoUpdate { info } => {
-                self._info.write().await.replace(info.clone());
-            }
-            _ => {}
-        }
+    pub async fn info(&self) -> Option<SystemInfo> {
+        self._info.read().await.clone()
+    }
 
+    async fn _process_message(&self, message: ClientMessage) -> anyhow::Result<()> {
+        println!("Received message from {}: {message:?}", self._peer);
         let mut new_list = LinkedList::new();
         let mut listeners = self._listeners.lock().await;
         while let Some(listener) = listeners.pop_front() {
@@ -80,23 +79,19 @@ impl ClientConnector {
         Ok(())
     }
 
-    pub async fn request(
-        &self,
-        request: &ServerMessage,
-        predicate: impl Fn(&ClientMessage) -> bool + Send + Sync + 'static,
-    ) -> anyhow::Result<ClientMessage> {
-        let waiter = async move { self.wait_for(predicate).await };
+    pub async fn request(&self, request: &ServerMessage) -> anyhow::Result<ClientMessage> {
+        let id = request.id;
+        let waiter = async move { self.wait_for(move |m| m.id == id).await };
 
         self.send(request).await?;
         match timeout(self._config.request_timeout, waiter).await {
             Ok(Ok(response)) => Ok(response),
             _ => {
-                warn!(
-                    "Request timed out to {} after {}s.",
+                anyhow::bail!(
+                    "Request {request:?} timed out to {} after {}s.",
                     self._peer,
-                    self._config.request_timeout.as_secs_f64(),
-                );
-                Err(anyhow::anyhow!("Request timed out"))
+                    self._config.request_timeout.as_secs(),
+                )
             }
         }
     }
@@ -116,6 +111,20 @@ impl ClientConnector {
         }
 
         Ok(receive.await?)
+    }
+
+    pub async fn update_system_info(&self) -> anyhow::Result<()> {
+        let response = self
+            .request(&ServerMessage::new(ServerMessageData::SystemInfoQuery))
+            .await?;
+
+        if let ClientMessageData::SystemInfoQueryResponse { info } = response.data {
+            self._info.write().await.replace(info);
+        } else {
+            anyhow::bail!("Unexpected response to system info query: {response:?}");
+        }
+
+        Ok(())
     }
 }
 

@@ -1,14 +1,18 @@
 use tokio::io::AsyncReadExt;
-use tokio::net::tcp::OwnedReadHalf;
-use tokio::sync::{Mutex, MutexGuard};
 
-pub struct TcpReader {
+pub struct Reader<R>
+where
+    R: AsyncReadExt + Unpin,
+{
     _buffer: [u8; 1024],
-    pub stream: OwnedReadHalf,
+    pub stream: R,
 }
 
-impl TcpReader {
-    pub fn new(stream: OwnedReadHalf) -> Self {
+impl<R> Reader<R>
+where
+    R: AsyncReadExt + Unpin,
+{
+    pub fn new(stream: R) -> Self {
         Self {
             _buffer: [0; 1024],
             stream,
@@ -22,9 +26,4 @@ impl TcpReader {
     pub fn prefix(&self, size: usize) -> &[u8] {
         &self._buffer[..size]
     }
-}
-
-pub fn acquire_free_mutex<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
-    lock.try_lock()
-        .expect("This mutex should never be contended")
 }

@@ -7,8 +7,10 @@ edition.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
-serde = { workspace = true, features = ["derive", "std"] }
+poem-openapi = { workspace = true, features = ["swagger-ui"] }
+serde = { workspace = true, features = ["derive", "rc", "std"] }
 simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
+slotmap = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync"] }
 
 [lints]

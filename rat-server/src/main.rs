@@ -1,3 +1,4 @@
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::Duration;
 
 use clap::Parser;
@@ -25,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let server = Server::bind(
-        ("127.0.0.1", arguments.admin_port),
-        ("0.0.0.0", arguments.port),
+        SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), arguments.admin_port),
+        SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), arguments.port),
         config,
     )
     .await?;

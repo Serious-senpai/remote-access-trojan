@@ -8,7 +8,7 @@ use simplelog::{
 
 pub fn initialize_logger<P: AsRef<Path>>(level: LevelFilter, log_path: P) -> anyhow::Result<()> {
     let config = ConfigBuilder::new()
-        .set_location_level(level)
+        .set_location_level(LevelFilter::Error)
         .set_time_offset_to_local()
         .unwrap_or_else(|e| e)
         .build();

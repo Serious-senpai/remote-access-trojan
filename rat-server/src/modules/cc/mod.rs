@@ -11,6 +11,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{debug, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
+use rat_common::schema::SystemInfo;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::RwLock;
 
@@ -33,6 +34,24 @@ impl CCServer {
             _clients: RwLock::new(HashMap::new()),
             _state: ModuleState::new(),
         }))
+    }
+
+    pub async fn clients(&self) -> Vec<(SocketAddr, Option<SystemInfo>)> {
+        let clients = self._clients.read().await;
+        let mut result = Vec::with_capacity(clients.len());
+        for (addr, client) in clients.iter() {
+            result.push((*addr, client.info().await));
+        }
+
+        result
+    }
+
+    pub async fn client(&self, addr: &SocketAddr) -> Option<Option<SystemInfo>> {
+        let clients = self._clients.read().await;
+        match clients.get(addr) {
+            Some(client) => Some(client.info().await),
+            None => None,
+        }
     }
 }
 
@@ -59,13 +78,21 @@ impl ModuleImpl for CCServer {
         if let Entry::Vacant(e) = clients.entry(addr) {
             let client = ClientConnector::new(stream, addr, self._config);
             self.add_submodule(client.clone()).await;
-            e.insert(client);
+            e.insert(client.clone());
 
             debug!("Accepted new connection from {addr}");
+
+            client.update_system_info().await?;
         } else {
             warn!("Client {addr} is trying to connect more than once. Ignoring.");
         }
 
+        Ok(())
+    }
+
+    async fn submodules_remove_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        let mut clients = self._clients.write().await;
+        clients.retain(|_, client| client.is_running());
         Ok(())
     }
 }

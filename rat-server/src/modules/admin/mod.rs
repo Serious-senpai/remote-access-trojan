@@ -1,44 +1,42 @@
 mod api;
+mod schema;
+mod state;
 
-use std::sync::Arc;
+use std::net::SocketAddrV4;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use log::error;
+use poem::EndpointExt;
 use poem::listener::TcpListener;
-use poem::{Route, Server};
 use poem_openapi::OpenApiService;
 use rat_common::framework::{ModuleImpl, ModuleState};
-use rat_common::types::PortableSocketAddrs;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-pub struct AdminServer<A>
-where
-    A: PortableSocketAddrs,
-{
-    _address: A,
+use crate::modules::admin::state::AdminAPIState;
+use crate::modules::server::Server;
+
+pub struct AdminServer {
+    _address: SocketAddrV4,
+    _server: Weak<Server>,
     _task: Mutex<Option<JoinHandle<()>>>,
     _state: Arc<ModuleState>,
 }
 
-impl<A> AdminServer<A>
-where
-    A: PortableSocketAddrs,
-{
-    pub async fn bind(addr: A) -> anyhow::Result<Arc<Self>> {
-        Ok(Arc::new(Self {
+impl AdminServer {
+    pub fn bind(server: Weak<Server>, addr: SocketAddrV4) -> Arc<Self> {
+        Arc::new(Self {
             _address: addr,
+            _server: server,
             _task: Mutex::new(None),
             _state: ModuleState::new(),
-        }))
+        })
     }
 }
 
 #[async_trait]
-impl<A> ModuleImpl for AdminServer<A>
-where
-    A: PortableSocketAddrs,
-{
+impl ModuleImpl for AdminServer {
     type EventType = ();
 
     fn name(&self) -> &str {
@@ -58,11 +56,15 @@ where
     }
 
     async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
+        let state = Arc::new(AdminAPIState::new(self._server.clone()));
         let api_service = OpenApiService::new(api::AdminAPI, "Admin API", "1.0");
         let docs = api_service.swagger_ui();
 
-        let app = Route::new().nest("/", api_service).nest("/docs", docs);
-        let server = Server::new(TcpListener::bind(self._address.clone()));
+        let app = poem::Route::new()
+            .nest("/", api_service)
+            .nest("/docs", docs)
+            .data(state);
+        let server = poem::Server::new(TcpListener::bind(self._address.clone()));
 
         let self_cloned = self.clone();
         self._task.lock().await.replace(tokio::spawn(async move {
