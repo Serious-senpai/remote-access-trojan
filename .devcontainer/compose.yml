@@ -1,0 +1,17 @@
+# Reference: https://docs.docker.com/reference/compose-file/
+name: remote-access-trojan
+
+services:
+  devcontainer:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: bash -c "sleep infinity"
+    container_name: devcontainer
+    environment:
+      CARGO_TARGET_DIR: /target
+      RUST_BACKTRACE: "1"
+    image: ubuntu:24.04
+    volumes:
+      - ..:/workspaces/remote-access-trojan
+    working_dir: /workspaces/remote-access-trojan

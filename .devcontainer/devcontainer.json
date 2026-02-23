@@ -1,0 +1,25 @@
+{
+    "name": "devcontainer",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "github.vscode-github-actions",
+                "ms-azuretools.vscode-docker",
+                "rust-lang.rust-analyzer"
+            ],
+            "settings": {
+                "editor.formatOnSave": true,
+                "editor.tabSize": 4,
+                "extensions.ignoreRecommendations": false,
+                "git.autorefresh": true,
+                "git.enabled": true,
+                "rust-analyzer.rustfmt.extraArgs": [
+                    "+nightly"
+                ]
+            }
+        }
+    },
+    "dockerComposeFile": "compose.yml",
+    "service": "devcontainer",
+    "workspaceFolder": "/workspaces/remote-access-trojan"
+}
