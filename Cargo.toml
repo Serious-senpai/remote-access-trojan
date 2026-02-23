@@ -49,10 +49,19 @@ trait_duplication_in_bounds = "warn"
 use_self = "warn"
 wildcard_imports = "warn"
 
+[profile.dev]
+debug = 2
+lto = "off"
+opt-level = 0
+overflow-checks = true
+panic = "unwind"
+strip = false
+
 [profile.release]
 codegen-units = 1
 debug = 0
-lto = "thin"
+lto = "fat"
 opt-level = 3
 overflow-checks = false
+panic = "abort"
 strip = true

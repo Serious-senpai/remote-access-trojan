@@ -7,7 +7,13 @@ RUN rustup target add x86_64-unknown-linux-musl
 COPY . /app
 WORKDIR /app
 
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# Build each workspace member separately because a full workspace build use the union of all
+# dependencies, which causes some executables to include unnecessary stuff.
+RUN cargo build --release -p rat-client --target x86_64-unknown-linux-musl
+RUN cargo build --release -p rat-server --target x86_64-unknown-linux-musl
+
+RUN strip target/x86_64-unknown-linux-musl/release/rat-client
+RUN strip target/x86_64-unknown-linux-musl/release/rat-server
 
 FROM scratch AS client-runtime
 
