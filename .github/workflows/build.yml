@@ -1,0 +1,30 @@
+name: Build
+
+on: [ push, pull_request ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose build
+
+      - name: Save Docker images
+        run: |
+          mkdir build
+          docker save -o build/client.tar remote-access-trojan-client
+          docker save -o build/server.tar remote-access-trojan-server
+
+      - name: Upload Docker images
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: build

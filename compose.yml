@@ -1,0 +1,22 @@
+# Reference: https://docs.docker.com/reference/compose-file/
+name: remote-access-trojan
+
+services:
+  client:
+    build:
+      context: .
+      target: client
+    command: [ "server:12110" ]
+    deploy:
+      replicas: 3
+    image: rat-client
+
+  server:
+    build:
+      context: .
+      target: server
+    hostname: server
+    image: rat-server
+    ports:
+      - "12110:12110"
+      - "12111:12111"
