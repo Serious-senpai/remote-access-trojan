@@ -14,7 +14,7 @@ enum AdminAPITag {
 
 pub struct AdminAPI;
 
-#[OpenApi(tag = AdminAPITag::Clients)]
+#[OpenApi(prefix_path = "/api", tag = AdminAPITag::Clients)]
 impl AdminAPI {
     /// List all clients connected to the C&C server.
     #[oai(path = "/clients", method = "get")]

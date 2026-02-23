@@ -58,11 +58,14 @@ impl ModuleImpl for AdminServer {
     async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
         let state = Arc::new(AdminAPIState::new(self._server.clone()));
         let api_service = OpenApiService::new(api::AdminAPI, "Admin API", "1.0");
-        let docs = api_service.swagger_ui();
+
+        let spec = api_service.spec_endpoint();
+        let swagger = api_service.swagger_ui();
 
         let app = poem::Route::new()
             .nest("/", api_service)
-            .nest("/docs", docs)
+            .nest("/docs/openapi.json", spec)
+            .nest("/docs/swagger", swagger)
             .data(state);
         let server = poem::Server::new(TcpListener::bind(self._address.clone()));
 
