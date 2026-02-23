@@ -5,7 +5,7 @@ services:
   client:
     build:
       context: .
-      target: client
+      target: client-runtime
     command: [ "server:12110" ]
     deploy:
       replicas: 3
@@ -14,7 +14,7 @@ services:
   server:
     build:
       context: .
-      target: server
+      target: server-runtime
     hostname: server
     image: rat-server
     ports:
