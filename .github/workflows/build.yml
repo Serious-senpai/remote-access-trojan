@@ -19,9 +19,10 @@ jobs:
 
       - name: Save Docker images
         run: |
-          mkdir build
-          docker save -o build/client.tar remote-access-trojan-client
-          docker save -o build/server.tar remote-access-trojan-server
+          mkdir -p build
+          docker image ls
+          docker save -o build/client.tar client
+          docker save -o build/server.tar server
 
       - name: Upload Docker images
         uses: actions/upload-artifact@v4
