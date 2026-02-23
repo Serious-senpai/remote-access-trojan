@@ -12,7 +12,7 @@ poem = { workspace = true }
 poem-openapi = { workspace = true, features = ["swagger-ui"] }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
-tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 
 [lints]
 workspace = true

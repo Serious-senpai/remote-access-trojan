@@ -67,7 +67,7 @@ impl ModuleImpl for AdminServer {
             .nest("/docs/openapi.json", spec)
             .nest("/docs/swagger", swagger)
             .data(state);
-        let server = poem::Server::new(TcpListener::bind(self._address.clone()));
+        let server = poem::Server::new(TcpListener::bind(self._address));
 
         let self_cloned = self.clone();
         self._task.lock().await.replace(tokio::spawn(async move {

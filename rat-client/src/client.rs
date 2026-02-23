@@ -34,7 +34,7 @@ pub struct Client {
 
 impl Client {
     pub async fn connect(addr: SocketAddr) -> Self {
-        let (reader, writer) = Self::_reconnect(addr.clone()).await;
+        let (reader, writer) = Self::_reconnect(addr).await;
 
         let mut system = System::new_all();
         system.refresh_all();
@@ -52,7 +52,7 @@ impl Client {
 
     async fn _reconnect(addr: SocketAddr) -> (Reader<OwnedReadHalf>, OwnedWriteHalf) {
         loop {
-            match TcpStream::connect(addr.clone()).await {
+            match TcpStream::connect(addr).await {
                 Ok(stream) => {
                     let (reader, writer) = stream.into_split();
                     return (Reader::new(reader), writer);
@@ -190,7 +190,7 @@ impl ModuleImpl for Client {
             error!("Server disconnected. Reconnecting...");
 
             let (new_reader, new_writer) = tokio::select! {
-                pair = Self::_reconnect(self._addr.clone()) => pair,
+                pair = Self::_reconnect(self._addr) => pair,
                 _ = self.wait_until_stopped() => {
                     return Ok(());
                 }

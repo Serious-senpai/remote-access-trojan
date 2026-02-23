@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 pub struct SnowflakeId(u128);
 
 static _COUNTER: AtomicU32 = AtomicU32::new(0);
+
+impl Default for SnowflakeId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SnowflakeId {
     const _TAIL_BITS: u32 = 32;
@@ -31,7 +37,7 @@ impl SnowflakeId {
 }
 
 impl Display for SnowflakeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
