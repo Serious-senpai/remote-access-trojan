@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::fmt::{self, Display};
+use std::iter;
 use std::num::ParseIntError;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use poem_openapi::registry::{MetaSchema, MetaSchemaRef};
-use poem_openapi::types::{ParseFromJSON, ParseResult, ToJSON, Type};
+use poem_openapi::types::{ParseError, ParseFromJSON, ParseResult, ToJSON, Type};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -52,7 +54,7 @@ impl<'de> Deserialize<'de> for SnowflakeId {
     {
         let s = String::deserialize(deserializer)?;
         let value = s.parse::<u128>().map_err(de::Error::custom)?;
-        Ok(SnowflakeId(value))
+        Ok(Self(value))
     }
 }
 
@@ -82,7 +84,7 @@ impl Type for SnowflakeId {
     type RawValueType = Self;
     type RawElementValueType = Self;
 
-    fn name() -> std::borrow::Cow<'static, str> {
+    fn name() -> Cow<'static, str> {
         "SnowflakeId".into()
     }
 
@@ -101,22 +103,22 @@ impl Type for SnowflakeId {
     fn raw_element_iter<'a>(
         &'a self,
     ) -> Box<dyn Iterator<Item = &'a Self::RawElementValueType> + 'a> {
-        Box::new(std::iter::once(self))
+        Box::new(iter::once(self))
     }
 }
 
 impl ParseFromJSON for SnowflakeId {
     fn parse_from_json(value: Option<serde_json::Value>) -> ParseResult<Self> {
-        let value = value.ok_or_else(|| poem_openapi::types::ParseError::expected_input())?;
+        let value = value.ok_or_else(ParseError::expected_input)?;
 
         match value {
             serde_json::Value::String(s) => {
                 let parsed = s
                     .parse::<u128>()
-                    .map_err(|e| poem_openapi::types::ParseError::custom(e.to_string()))?;
-                Ok(SnowflakeId(parsed))
+                    .map_err(|e| ParseError::custom(e.to_string()))?;
+                Ok(Self(parsed))
             }
-            _ => Err(poem_openapi::types::ParseError::expected_type(value)),
+            _ => Err(ParseError::expected_type(value)),
         }
     }
 }
