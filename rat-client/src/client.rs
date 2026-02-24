@@ -1,5 +1,4 @@
 use std::collections::{HashMap, VecDeque};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,11 +18,12 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
+use crate::UniversalSocketAddr;
 use crate::sessions::terminal::TerminalSession;
 use crate::sessions::{Session, SessionImpl};
 
 pub struct Client {
-    _addr: SocketAddr,
+    _addr: UniversalSocketAddr,
     _reader: Mutex<Reader<OwnedReadHalf>>,
     _writer: Mutex<OwnedWriteHalf>,
     _total_read_buf: Mutex<VecDeque<u8>>,
@@ -33,8 +33,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(addr: SocketAddr) -> Self {
-        let (reader, writer) = Self::_reconnect(addr).await;
+    pub async fn connect(addr: UniversalSocketAddr) -> Self {
+        let (reader, writer) = Self::_reconnect(&addr).await;
 
         let mut system = System::new_all();
         system.refresh_all();
@@ -50,7 +50,7 @@ impl Client {
         }
     }
 
-    async fn _reconnect(addr: SocketAddr) -> (Reader<OwnedReadHalf>, OwnedWriteHalf) {
+    async fn _reconnect(addr: &UniversalSocketAddr) -> (Reader<OwnedReadHalf>, OwnedWriteHalf) {
         loop {
             match TcpStream::connect(addr).await {
                 Ok(stream) => {
@@ -190,7 +190,7 @@ impl ModuleImpl for Client {
             error!("Server disconnected. Reconnecting...");
 
             let (new_reader, new_writer) = tokio::select! {
-                pair = Self::_reconnect(self._addr) => pair,
+                pair = Self::_reconnect(&self._addr) => pair,
                 _ = self.wait_until_stopped() => {
                     return Ok(());
                 }

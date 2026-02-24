@@ -1,8 +1,9 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::{Parser, crate_description, crate_version};
 use log::LevelFilter;
+
+use crate::UniversalSocketAddr;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -13,7 +14,7 @@ use log::LevelFilter;
 pub struct Arguments {
     /// Host of the RAT server to connect to
     #[arg(long, default_value = "127.0.0.1:12110")]
-    pub host: SocketAddr,
+    pub host: UniversalSocketAddr,
 
     /// The logging level
     #[arg(long, default_value_t = LevelFilter::Info)]

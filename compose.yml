@@ -6,7 +6,7 @@ services:
     build:
       context: .
       target: client-runtime
-    command: [ "server:12110" ]
+    command: [ "--host", "server:12110", "--log-path", "/client.log" ]
     deploy:
       replicas: 3
     image: rat-client
@@ -15,6 +15,7 @@ services:
     build:
       context: .
       target: server-runtime
+    command: [ "--log-path", "/client.log" ]
     hostname: server
     image: rat-server
     ports:
