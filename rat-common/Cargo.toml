@@ -9,6 +9,7 @@ async-trait = { workspace = true }
 log = { workspace = true }
 poem-openapi = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc", "std"] }
+serde_json = { workspace = true }
 simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
 slotmap = { workspace = true }
 tokio = { workspace = true }

@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use rat_common::empty_module_impl;
 use rat_common::framework::{ModuleImpl, ModuleState};
-use rat_common::schema::SystemInfo;
+use rat_common::schema::{SessionCreateRequest, SessionMetadata, SystemInfo};
+use rat_common::snowflake::SnowflakeId;
 
 use crate::config::Config;
 use crate::modules::admin::AdminServer;
@@ -32,12 +33,37 @@ impl Server {
         }))
     }
 
-    pub async fn clients(&self) -> Vec<(SocketAddr, Option<SystemInfo>)> {
-        self._cc.clients().await
+    pub async fn get_clients(&self) -> Vec<(SocketAddr, Option<SystemInfo>)> {
+        self._cc.get_clients().await
     }
 
-    pub async fn client(&self, addr: &SocketAddr) -> Option<Option<SystemInfo>> {
-        self._cc.client(addr).await
+    pub async fn get_clients_addr(&self, addr: &SocketAddr) -> Option<Option<SystemInfo>> {
+        self._cc.get_clients_addr(addr).await
+    }
+
+    pub async fn get_clients_addr_sessions(
+        &self,
+        addr: &SocketAddr,
+    ) -> anyhow::Result<Option<Vec<Arc<SessionMetadata>>>> {
+        self._cc.get_clients_addr_sessions(addr).await
+    }
+
+    pub async fn post_clients_addr_sessions(
+        &self,
+        addr: &SocketAddr,
+        request: SessionCreateRequest,
+    ) -> anyhow::Result<Option<Arc<SessionMetadata>>> {
+        self._cc.post_clients_addr_sessions(addr, request).await
+    }
+
+    pub async fn delete_clients_addr_sessions_session_id(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> anyhow::Result<Option<()>> {
+        self._cc
+            .delete_clients_addr_sessions_session_id(addr, session_id)
+            .await
     }
 }
 

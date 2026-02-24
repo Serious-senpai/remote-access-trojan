@@ -1,22 +1,29 @@
 use std::sync::Arc;
 
-use poem_openapi::Object;
+use poem_openapi::{Enum, Object, Union};
 use serde::{Deserialize, Serialize};
 
 use crate::snowflake::SnowflakeId;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Object, Serialize)]
 pub struct SessionMetadata {
     pub id: SnowflakeId,
     pub inner: SessionMetadataInner,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Union, Serialize)]
+#[oai(discriminator_name = "type", rename_all = "kebab-case")]
 pub enum SessionMetadataInner {
-    Terminal { pid: u32 },
+    Terminal(SessionTerminalMetadataInner),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Object, Serialize)]
+pub struct SessionTerminalMetadataInner {
+    pub pid: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Enum, Serialize)]
+#[oai(rename_all = "kebab-case")]
 pub enum SessionCreateRequest {
     Terminal,
 }
@@ -24,6 +31,7 @@ pub enum SessionCreateRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SessionInput {
     TerminalStdin { data: Vec<u8> },
+    Close,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

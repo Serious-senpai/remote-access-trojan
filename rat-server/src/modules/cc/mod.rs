@@ -11,7 +11,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{debug, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
-use rat_common::schema::SystemInfo;
+use rat_common::schema::{
+    ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest, SessionInput,
+    SessionMetadata, SystemInfo,
+};
+use rat_common::snowflake::SnowflakeId;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::RwLock;
 
@@ -36,7 +40,7 @@ impl CCServer {
         }))
     }
 
-    pub async fn clients(&self) -> Vec<(SocketAddr, Option<SystemInfo>)> {
+    pub async fn get_clients(&self) -> Vec<(SocketAddr, Option<SystemInfo>)> {
         let clients = self._clients.read().await;
         let mut result = Vec::with_capacity(clients.len());
         for (addr, client) in clients.iter() {
@@ -46,11 +50,103 @@ impl CCServer {
         result
     }
 
-    pub async fn client(&self, addr: &SocketAddr) -> Option<Option<SystemInfo>> {
-        let clients = self._clients.read().await;
-        match clients.get(addr) {
+    pub async fn get_clients_addr(&self, addr: &SocketAddr) -> Option<Option<SystemInfo>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
             Some(client) => Some(client.info().await),
             None => None,
+        }
+    }
+
+    pub async fn get_clients_addr_sessions(
+        &self,
+        addr: &SocketAddr,
+    ) -> anyhow::Result<Option<Vec<Arc<SessionMetadata>>>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
+            Some(client) => {
+                let response = client
+                    .request(&ServerMessage::new(ServerMessageData::SessionQuery))
+                    .await?;
+
+                if let ClientMessageData::SessionQueryResponse { sessions } = response.data {
+                    Ok(Some(sessions))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Unexpected response from client: {response:?}"
+                    ))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn post_clients_addr_sessions(
+        &self,
+        addr: &SocketAddr,
+        request: SessionCreateRequest,
+    ) -> anyhow::Result<Option<Arc<SessionMetadata>>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
+            Some(client) => {
+                let response = client
+                    .request(&ServerMessage::new(ServerMessageData::SessionCreate {
+                        request,
+                    }))
+                    .await?;
+
+                if let ClientMessageData::SessionCreateResponse { session } = response.data {
+                    Ok(Some(session))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Unexpected response from client: {response:?}"
+                    ))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn delete_clients_addr_sessions_session_id(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> anyhow::Result<Option<()>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
+            Some(client) => {
+                let response = client
+                    .request(&ServerMessage::new(ServerMessageData::SessionInput {
+                        session_id,
+                        input: SessionInput::Close,
+                    }))
+                    .await?;
+
+                if let ClientMessageData::SessionInputResponse = response.data {
+                    Ok(Some(()))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Unexpected response from client: {response:?}"
+                    ))
+                }
+            }
+            None => Ok(None),
         }
     }
 }

@@ -1,15 +1,19 @@
+use std::sync::Arc;
+
 use poem_openapi::payload::Json;
 use poem_openapi::types::{ParseFromJSON, ToJSON, Type};
 use poem_openapi::{ApiResponse, Enum, Object};
-use rat_common::schema::SystemInfo;
+use rat_common::schema::{SessionMetadata, SystemInfo};
+use rat_common::snowflake::SnowflakeId;
 
 #[derive(Enum)]
-#[oai(rename_all = "SCREAMING_SNAKE_CASE")]
+#[oai(rename_all = "kebab-case")]
 pub enum AdminResultCode {
     Success,
     DeadServer,
     InvalidInput,
     ClientNotFound,
+    Other,
 }
 
 #[derive(Object)]
@@ -40,6 +44,7 @@ where
             AdminResultCode::DeadServer => "The server is not running",
             AdminResultCode::InvalidInput => "The input provided is invalid",
             AdminResultCode::ClientNotFound => "The specified client was not found",
+            AdminResultCode::Other => "An unknown error occurred",
         }
         .to_string();
         Self::error_with_message(code, message)
@@ -61,13 +66,31 @@ pub struct Client {
 }
 
 #[derive(ApiResponse)]
-pub enum GetClientResponse {
+pub enum GetClientsResponse {
     #[oai(status = 200)]
     Ok(Json<AdminResult<Vec<Client>>>),
 }
 
 #[derive(ApiResponse)]
-pub enum GetClientAddrResponse {
+pub enum GetClientsAddrResponse {
     #[oai(status = 200)]
     Ok(Json<AdminResult<Client>>),
+}
+
+#[derive(ApiResponse)]
+pub enum GetClientsAddrSessionsResponse {
+    #[oai(status = 200)]
+    Ok(Json<AdminResult<Vec<Arc<SessionMetadata>>>>),
+}
+
+#[derive(ApiResponse)]
+pub enum PostClientsAddrSessionsResponse {
+    #[oai(status = 200)]
+    Ok(Json<AdminResult<Arc<SessionMetadata>>>),
+}
+
+#[derive(ApiResponse)]
+pub enum DeleteClientsAddrSessionsResponse {
+    #[oai(status = 200)]
+    Ok(Json<AdminResult<SnowflakeId>>),
 }

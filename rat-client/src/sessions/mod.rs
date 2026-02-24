@@ -10,7 +10,6 @@ use rat_common::schema::{SessionInput, SessionMetadata};
 pub trait SessionImpl: Send + Sync {
     fn metadata(&self) -> Arc<SessionMetadata>;
     async fn input(&self, data: SessionInput) -> anyhow::Result<()>;
-    async fn close(&self) -> anyhow::Result<()>;
 }
 
 #[async_trait]
