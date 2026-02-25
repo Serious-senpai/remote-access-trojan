@@ -124,6 +124,16 @@ impl CCServer {
         addr: &SocketAddr,
         session_id: SnowflakeId,
     ) -> anyhow::Result<Option<()>> {
+        self.post_clients_addr_sessions_session_id_input(addr, session_id, SessionInput::close())
+            .await
+    }
+
+    pub async fn post_clients_addr_sessions_session_id_input(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+        input: SessionInput,
+    ) -> anyhow::Result<Option<()>> {
         let entry = {
             let clients = self._clients.read().await;
             clients.get(addr).cloned()
@@ -134,7 +144,7 @@ impl CCServer {
                 let response = client
                     .request(&ServerMessage::new(ServerMessageData::SessionInput {
                         session_id,
-                        input: SessionInput::Close,
+                        input,
                     }))
                     .await?;
 

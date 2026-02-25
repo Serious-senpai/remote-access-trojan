@@ -60,7 +60,7 @@ where
 }
 
 #[derive(Object)]
-pub struct Client {
+pub struct ClientAPI {
     pub address: String,
     pub info: Option<SystemInfo>,
 }
@@ -68,13 +68,13 @@ pub struct Client {
 #[derive(ApiResponse)]
 pub enum GetClientsResponse {
     #[oai(status = 200)]
-    Ok(Json<AdminResult<Vec<Client>>>),
+    Ok(Json<AdminResult<Vec<ClientAPI>>>),
 }
 
 #[derive(ApiResponse)]
 pub enum GetClientsAddrResponse {
     #[oai(status = 200)]
-    Ok(Json<AdminResult<Client>>),
+    Ok(Json<AdminResult<ClientAPI>>),
 }
 
 #[derive(ApiResponse)]
@@ -91,6 +91,12 @@ pub enum PostClientsAddrSessionsResponse {
 
 #[derive(ApiResponse)]
 pub enum DeleteClientsAddrSessionsResponse {
+    #[oai(status = 200)]
+    Ok(Json<AdminResult<SnowflakeId>>),
+}
+
+#[derive(ApiResponse)]
+pub enum PostClientsAddrSessionsSessionIdInputResponse {
     #[oai(status = 200)]
     Ok(Json<AdminResult<SnowflakeId>>),
 }

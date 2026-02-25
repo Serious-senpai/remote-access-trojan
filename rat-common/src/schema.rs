@@ -11,14 +11,14 @@ pub struct SessionMetadata {
     pub inner: SessionMetadataInner,
 }
 
-#[derive(Clone, Debug, Deserialize, Union, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Union)]
 #[oai(discriminator_name = "type", rename_all = "kebab-case")]
 pub enum SessionMetadataInner {
-    Terminal(SessionTerminalMetadataInner),
+    Terminal(SessionMetadataInnerTerminal),
 }
 
 #[derive(Clone, Debug, Deserialize, Object, Serialize)]
-pub struct SessionTerminalMetadataInner {
+pub struct SessionMetadataInnerTerminal {
     pub pid: u32,
 }
 
@@ -28,11 +28,30 @@ pub enum SessionCreateRequest {
     Terminal,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Union)]
+#[oai(rename_all = "kebab-case")]
 pub enum SessionInput {
-    TerminalStdin { data: Vec<u8> },
-    Close,
+    TerminalStdin(SessionInputTerminalStdin),
+    Close(SessionInputClose),
 }
+
+impl SessionInput {
+    pub fn terminal_stdin(data: Vec<u8>) -> Self {
+        Self::TerminalStdin(SessionInputTerminalStdin { data })
+    }
+
+    pub fn close() -> Self {
+        Self::Close(SessionInputClose {})
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Object, Serialize)]
+pub struct SessionInputTerminalStdin {
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Object, Serialize)]
+pub struct SessionInputClose {}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SessionOutput {

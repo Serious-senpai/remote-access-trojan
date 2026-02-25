@@ -4,7 +4,7 @@ use poem::web::Data;
 use poem_openapi::param::Path;
 use poem_openapi::payload::Json;
 use poem_openapi::{OpenApi, Tags};
-use rat_common::schema::SessionCreateRequest;
+use rat_common::schema::{SessionCreateRequest, SessionInput};
 
 use crate::modules::admin::schema;
 use crate::modules::admin::state::AdminAPIState;
@@ -27,7 +27,7 @@ impl AdminAPI {
                 schema::AdminResult::success(
                     clients
                         .into_iter()
-                        .map(|(address, info)| schema::Client {
+                        .map(|(address, info)| schema::ClientAPI {
                             address: address.to_string(),
                             info,
                         })
@@ -48,7 +48,7 @@ impl AdminAPI {
         schema::GetClientsAddrResponse::Ok(match state.server.upgrade() {
             Some(server) => match addr.parse() {
                 Ok(address) => match server.get_clients_addr(&address).await {
-                    Some(info) => schema::AdminResult::success(schema::Client {
+                    Some(info) => schema::AdminResult::success(schema::ClientAPI {
                         address: addr.0,
                         info,
                     }),
@@ -129,6 +129,45 @@ impl AdminAPI {
                 Some(server) => match addr.parse() {
                     Ok(address) => match server
                         .delete_clients_addr_sessions_session_id(&address, session_id)
+                        .await
+                    {
+                        Ok(Some(())) => schema::AdminResult::success(session_id),
+                        Ok(None) => {
+                            schema::AdminResult::error(schema::AdminResultCode::ClientNotFound)
+                        }
+                        Err(e) => schema::AdminResult::error_with_message(
+                            schema::AdminResultCode::Other,
+                            format!("Failed to delete client session: {e}"),
+                        ),
+                    },
+                    Err(e) => schema::AdminResult::error_with_message(
+                        schema::AdminResultCode::InvalidInput,
+                        format!("Invalid address: {e}"),
+                    ),
+                },
+                None => schema::AdminResult::error(schema::AdminResultCode::DeadServer),
+            },
+            Err(e) => schema::AdminResult::error_with_message(
+                schema::AdminResultCode::InvalidInput,
+                format!("Invalid session ID: {e}"),
+            ),
+        })
+    }
+
+    /// Send input to an existing session of a specific client
+    #[oai(path = "/clients/:addr/sessions/:session_id/data", method = "post")]
+    async fn post_clients_addr_sessions_session_id_input(
+        &self,
+        addr: Path<String>,
+        session_id: Path<String>,
+        body: Json<SessionInput>,
+        state: Data<&Arc<AdminAPIState>>,
+    ) -> schema::PostClientsAddrSessionsSessionIdInputResponse {
+        schema::PostClientsAddrSessionsSessionIdInputResponse::Ok(match session_id.0.try_into() {
+            Ok(session_id) => match state.server.upgrade() {
+                Some(server) => match addr.parse() {
+                    Ok(address) => match server
+                        .post_clients_addr_sessions_session_id_input(&address, session_id, body.0)
                         .await
                     {
                         Ok(Some(())) => schema::AdminResult::success(session_id),

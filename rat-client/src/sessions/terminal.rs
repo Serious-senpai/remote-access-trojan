@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
 use rat_common::schema::{
-    ClientMessage, ClientMessageData, SessionInput, SessionMetadata, SessionMetadataInner,
-    SessionOutput, SessionTerminalMetadataInner,
+    ClientMessage, ClientMessageData, SessionInput, SessionInputTerminalStdin, SessionMetadata,
+    SessionMetadataInner, SessionMetadataInnerTerminal, SessionOutput,
 };
 use rat_common::snowflake::SnowflakeId;
 use tokio::io::AsyncWriteExt;
@@ -74,7 +74,7 @@ impl TerminalSession {
             _client: client,
             _metadata: Arc::new(SessionMetadata {
                 id,
-                inner: SessionMetadataInner::Terminal(SessionTerminalMetadataInner { pid }),
+                inner: SessionMetadataInner::Terminal(SessionMetadataInnerTerminal { pid }),
             }),
             _name: name,
             _process: Mutex::new(process),
@@ -148,11 +148,11 @@ impl SessionImpl for TerminalSession {
 
     async fn input(&self, data: SessionInput) -> anyhow::Result<()> {
         match data {
-            SessionInput::TerminalStdin { data } => {
+            SessionInput::TerminalStdin(SessionInputTerminalStdin { data }) => {
                 let mut stdin = self._input.lock().await;
                 stdin.write_all(&data).await?;
             }
-            SessionInput::Close => {
+            SessionInput::Close(_) => {
                 self._process.lock().await.kill().await?;
             }
         }
