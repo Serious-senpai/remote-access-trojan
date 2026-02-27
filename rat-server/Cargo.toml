@@ -7,12 +7,14 @@ edition.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true, features = ["cargo", "derive", "error-context", "help", "usage"] }
+futures-util = { workspace = true }
 log = { workspace = true }
 poem = { workspace = true }
 poem-openapi = { workspace = true, features = ["swagger-ui"] }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
+tokio-stream = { workspace = true }
 
 [lints]
 workspace = true

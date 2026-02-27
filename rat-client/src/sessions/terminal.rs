@@ -4,9 +4,11 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
+use rat_common::schema::input::{SessionInput, SessionInputTerminalStdin};
+use rat_common::schema::output::SessionOutput;
 use rat_common::schema::{
-    ClientMessage, ClientMessageData, SessionInput, SessionInputTerminalStdin, SessionMetadata,
-    SessionMetadataInner, SessionMetadataInnerTerminal, SessionOutput,
+    ClientMessage, ClientMessageData, SessionMetadata, SessionMetadataInner,
+    SessionMetadataInnerTerminal,
 };
 use rat_common::snowflake::SnowflakeId;
 use tokio::io::AsyncWriteExt;
@@ -103,25 +105,25 @@ impl ModuleImpl for TerminalSession {
         tokio::select! {
             Ok(size) = stdout.read() => {
                 if size == 0 {
-                    SessionOutput::TerminalClosed
+                    SessionOutput::closed()
                 } else {
-                    SessionOutput::TerminalStdout { data: stdout.prefix(size).to_vec() }
+                    SessionOutput::terminal_stdout_bytes(stdout.prefix(size))
                 }
             }
             Ok(size) = stderr.read() => {
                 if size == 0 {
-                    SessionOutput::TerminalClosed
+                    SessionOutput::closed()
                 } else {
-                    SessionOutput::TerminalStderr { data: stderr.prefix(size).to_vec() }
+                    SessionOutput::terminal_stderr_bytes(stderr.prefix(size))
                 }
             }
-            else => SessionOutput::TerminalClosed,
+            else => SessionOutput::closed(),
         }
     }
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
         if let Some(client) = self._client.upgrade() {
-            if let SessionOutput::TerminalClosed = event {
+            if let SessionOutput::TerminalClosed(_) = event {
                 // Do not early return here, as we still want to send the closed message to the server
                 self.stop();
             }
@@ -150,7 +152,7 @@ impl SessionImpl for TerminalSession {
         match data {
             SessionInput::TerminalStdin(SessionInputTerminalStdin { data }) => {
                 let mut stdin = self._input.lock().await;
-                stdin.write_all(&data).await?;
+                stdin.write_all(data.as_bytes()).await?;
             }
             SessionInput::Close(_) => {
                 self._process.lock().await.kill().await?;

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use poem_openapi::payload::Json;
+use poem_openapi::payload::{EventStream, Json};
 use poem_openapi::types::{ParseFromJSON, ToJSON, Type};
 use poem_openapi::{ApiResponse, Enum, Object};
+use rat_common::schema::output::SessionOutput;
 use rat_common::schema::{SessionMetadata, SystemInfo};
 use rat_common::snowflake::SnowflakeId;
 
@@ -57,6 +58,10 @@ where
             data: None,
         })
     }
+
+    pub fn arbitrary_error(error: impl ToString) -> Json<Self> {
+        Self::error_with_message(AdminResultCode::Other, error.to_string())
+    }
 }
 
 #[derive(Object)]
@@ -99,4 +104,13 @@ pub enum DeleteClientsAddrSessionsResponse {
 pub enum PostClientsAddrSessionsSessionIdInputResponse {
     #[oai(status = 200)]
     Ok(Json<AdminResult<SnowflakeId>>),
+}
+
+#[derive(ApiResponse)]
+pub enum GetClientsAddrSessionsSessionIdInputResponse<T>
+where
+    T: futures_util::Stream<Item = AdminResult<SessionOutput>> + Send + 'static,
+{
+    #[oai(status = 200)]
+    Ok(EventStream<T>),
 }

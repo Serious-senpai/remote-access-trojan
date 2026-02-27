@@ -23,6 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config {
         heartbeat_interval: Duration::from_millis(arguments.heartbeat_interval),
         request_timeout: Duration::from_millis(arguments.request_timeout),
+        client_mpsc_channel_capacity: arguments.client_mpsc_channel_capacity,
     };
 
     let server = Server::bind(

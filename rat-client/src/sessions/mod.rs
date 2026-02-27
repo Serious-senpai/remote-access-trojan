@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rat_common::framework::{Module, ModuleImpl};
-use rat_common::schema::{SessionInput, SessionMetadata};
+use rat_common::schema::SessionMetadata;
+use rat_common::schema::input::SessionInput;
 
 #[async_trait]
 pub trait SessionImpl: Send + Sync {

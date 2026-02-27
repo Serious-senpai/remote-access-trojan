@@ -12,11 +12,11 @@ use rat_common::schema::{
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::{Mutex, RwLock, oneshot};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio::time::timeout;
 
 use crate::config::Config;
-use crate::modules::cc::listener::ClientMessageListener;
+use crate::modules::cc::listener::{ClientOnceListener, ClientPersistentListener};
 use crate::modules::cc::ping::ClientPing;
 
 pub struct ClientConnector {
@@ -26,7 +26,8 @@ pub struct ClientConnector {
     _peer: SocketAddr,
     _config: Config,
     _name: String,
-    _listeners: Mutex<LinkedList<ClientMessageListener>>,
+    _once_listeners: Mutex<LinkedList<ClientOnceListener>>,
+    _persistent_listeners: Mutex<LinkedList<ClientPersistentListener>>,
     _total_read_buf: Mutex<VecDeque<u8>>,
     _state: Arc<ModuleState>,
 }
@@ -41,7 +42,8 @@ impl ClientConnector {
             _peer: peer,
             _config: config,
             _name: format!("ClientConnector [{peer}]"),
-            _listeners: Mutex::new(LinkedList::new()),
+            _once_listeners: Mutex::new(LinkedList::new()),
+            _persistent_listeners: Mutex::new(LinkedList::new()),
             _total_read_buf: Mutex::new(VecDeque::new()),
             _state: ModuleState::new_with_submodules(vec![Arc::new(ClientPing::new(
                 peer,
@@ -56,18 +58,40 @@ impl ClientConnector {
     }
 
     async fn _process_message(&self, message: ClientMessage) -> anyhow::Result<()> {
-        println!("Received message from {}: {message:?}", self._peer);
-        let mut new_list = LinkedList::new();
-        let mut listeners = self._listeners.lock().await;
-        while let Some(listener) = listeners.pop_front() {
-            if (listener.predicate)(&message) {
-                let _ = listener.completer.send(message.clone());
-            } else {
-                new_list.push_back(listener);
+        {
+            let mut new_list = LinkedList::new();
+            let mut listeners = self._once_listeners.lock().await;
+            while let Some(listener) = listeners.pop_front() {
+                if (listener.predicate)(&message) {
+                    let _ = listener.completer.send(message.clone());
+                } else {
+                    new_list.push_back(listener);
+                }
             }
+
+            *listeners = new_list;
         }
 
-        *listeners = new_list;
+        {
+            let mut new_list = LinkedList::new();
+            let mut listeners = self._persistent_listeners.lock().await;
+            while let Some(listener) = listeners.pop_front() {
+                if !listener.sender.is_closed() {
+                    if (listener.predicate)(&message)
+                        && let Err(e) = listener.sender.try_send(message.clone())
+                    {
+                        error!(
+                            "Unable to send message to persistent listener of {}: {e}",
+                            self._peer
+                        );
+                    }
+
+                    new_list.push_back(listener);
+                }
+            }
+
+            *listeners = new_list;
+        }
 
         Ok(())
     }
@@ -103,14 +127,29 @@ impl ClientConnector {
         let (send, receive) = oneshot::channel();
 
         {
-            let mut listeners = self._listeners.lock().await;
-            listeners.push_back(ClientMessageListener {
+            let mut listeners = self._once_listeners.lock().await;
+            listeners.push_back(ClientOnceListener {
                 predicate: Box::new(predicate),
                 completer: send,
             });
         }
 
         Ok(receive.await?)
+    }
+
+    pub async fn subscribe(
+        &self,
+        predicate: impl Fn(&ClientMessage) -> bool + Send + Sync + 'static,
+    ) -> mpsc::Receiver<ClientMessage> {
+        let (sender, receiver) = mpsc::channel(self._config.client_mpsc_channel_capacity);
+
+        let mut listeners = self._persistent_listeners.lock().await;
+        listeners.push_back(ClientPersistentListener {
+            predicate: Box::new(predicate),
+            sender,
+        });
+
+        receiver
     }
 
     pub async fn update_system_info(&self) -> anyhow::Result<()> {

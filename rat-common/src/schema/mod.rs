@@ -1,8 +1,13 @@
+pub mod input;
+pub mod output;
+
 use std::sync::Arc;
 
 use poem_openapi::{Enum, Object, Union};
 use serde::{Deserialize, Serialize};
 
+use crate::schema::input::SessionInput;
+use crate::schema::output::SessionOutput;
 use crate::snowflake::SnowflakeId;
 
 #[derive(Clone, Debug, Deserialize, Object, Serialize)]
@@ -26,38 +31,6 @@ pub struct SessionMetadataInnerTerminal {
 #[oai(rename_all = "kebab-case")]
 pub enum SessionCreateRequest {
     Terminal,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Union)]
-#[oai(rename_all = "kebab-case")]
-pub enum SessionInput {
-    TerminalStdin(SessionInputTerminalStdin),
-    Close(SessionInputClose),
-}
-
-impl SessionInput {
-    pub fn terminal_stdin(data: Vec<u8>) -> Self {
-        Self::TerminalStdin(SessionInputTerminalStdin { data })
-    }
-
-    pub fn close() -> Self {
-        Self::Close(SessionInputClose {})
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Object, Serialize)]
-pub struct SessionInputTerminalStdin {
-    pub data: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Deserialize, Object, Serialize)]
-pub struct SessionInputClose {}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SessionOutput {
-    TerminalStdout { data: Vec<u8> },
-    TerminalStderr { data: Vec<u8> },
-    TerminalClosed,
 }
 
 #[derive(Clone, Debug, Deserialize, Object, Serialize)]

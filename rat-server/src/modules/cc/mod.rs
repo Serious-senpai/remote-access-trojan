@@ -9,15 +9,20 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
+use futures_util::stream::BoxStream;
 use log::{debug, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
+use rat_common::schema::input::SessionInput;
+use rat_common::schema::output::SessionOutput;
 use rat_common::schema::{
-    ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest, SessionInput,
-    SessionMetadata, SystemInfo,
+    ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest, SessionMetadata,
+    SystemInfo,
 };
 use rat_common::snowflake::SnowflakeId;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::RwLock;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::config::Config;
 use crate::modules::cc::client::ClientConnector;
@@ -157,6 +162,40 @@ impl CCServer {
                 }
             }
             None => Ok(None),
+        }
+    }
+
+    pub async fn get_clients_addr_sessions_session_id_input(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> Option<BoxStream<'static, SessionOutput>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
+            Some(client) => {
+                let receiver = client
+                    .subscribe(move |message| match &message.data {
+                        ClientMessageData::SessionOutput { session_id: id, .. } => {
+                            *id == session_id
+                        }
+                        _ => false,
+                    })
+                    .await;
+
+                Some(
+                    ReceiverStream::new(receiver)
+                        .map(|item| match item.data {
+                            ClientMessageData::SessionOutput { output, .. } => output,
+                            _ => unreachable!("get_clients_addr_sessions_session_id_input"),
+                        })
+                        .boxed(),
+                )
+            }
+            None => None,
         }
     }
 }

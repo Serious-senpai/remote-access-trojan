@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
+use futures_util::StreamExt;
+use futures_util::stream::{BoxStream, once};
 use poem::web::Data;
 use poem_openapi::param::Path;
-use poem_openapi::payload::Json;
+use poem_openapi::payload::{EventStream, Json};
 use poem_openapi::{OpenApi, Tags};
-use rat_common::schema::{SessionCreateRequest, SessionInput};
+use rat_common::schema::SessionCreateRequest;
+use rat_common::schema::input::SessionInput;
+use rat_common::schema::output::SessionOutput;
 
 use crate::modules::admin::schema;
 use crate::modules::admin::state::AdminAPIState;
@@ -102,10 +106,7 @@ impl AdminAPI {
                 Ok(address) => match server.post_clients_addr_sessions(&address, body.0).await {
                     Ok(Some(session)) => schema::AdminResult::success(session),
                     Ok(None) => schema::AdminResult::error(schema::AdminResultCode::ClientNotFound),
-                    Err(e) => schema::AdminResult::error_with_message(
-                        schema::AdminResultCode::Other,
-                        format!("Failed to create client session: {e}"),
-                    ),
+                    Err(e) => schema::AdminResult::arbitrary_error(e),
                 },
                 Err(e) => schema::AdminResult::error_with_message(
                     schema::AdminResultCode::InvalidInput,
@@ -135,10 +136,7 @@ impl AdminAPI {
                         Ok(None) => {
                             schema::AdminResult::error(schema::AdminResultCode::ClientNotFound)
                         }
-                        Err(e) => schema::AdminResult::error_with_message(
-                            schema::AdminResultCode::Other,
-                            format!("Failed to delete client session: {e}"),
-                        ),
+                        Err(e) => schema::AdminResult::arbitrary_error(e),
                     },
                     Err(e) => schema::AdminResult::error_with_message(
                         schema::AdminResultCode::InvalidInput,
@@ -174,10 +172,7 @@ impl AdminAPI {
                         Ok(None) => {
                             schema::AdminResult::error(schema::AdminResultCode::ClientNotFound)
                         }
-                        Err(e) => schema::AdminResult::error_with_message(
-                            schema::AdminResultCode::Other,
-                            format!("Failed to delete client session: {e}"),
-                        ),
+                        Err(e) => schema::AdminResult::arbitrary_error(e),
                     },
                     Err(e) => schema::AdminResult::error_with_message(
                         schema::AdminResultCode::InvalidInput,
@@ -190,6 +185,53 @@ impl AdminAPI {
                 schema::AdminResultCode::InvalidInput,
                 format!("Invalid session ID: {e}"),
             ),
+        })
+    }
+
+    /// Listen for output from an existing session of a specific client
+    #[oai(path = "/clients/:addr/sessions/:session_id/data", method = "get")]
+    async fn get_clients_addr_sessions_session_id_input(
+        &self,
+        addr: Path<String>,
+        session_id: Path<String>,
+        state: Data<&Arc<AdminAPIState>>,
+    ) -> schema::GetClientsAddrSessionsSessionIdInputResponse<
+        BoxStream<'static, schema::AdminResult<SessionOutput>>,
+    > {
+        let stream = match session_id.0.try_into() {
+            Ok(session_id) => match state.server.upgrade() {
+                Some(server) => match addr.parse() {
+                    Ok(address) => match server
+                        .get_clients_addr_sessions_session_id_input(&address, session_id)
+                        .await
+                    {
+                        Some(stream) => Ok(stream),
+                        None => Err(schema::AdminResult::error(
+                            schema::AdminResultCode::ClientNotFound,
+                        )),
+                    },
+                    Err(e) => Err(schema::AdminResult::error_with_message(
+                        schema::AdminResultCode::InvalidInput,
+                        format!("Invalid address: {e}"),
+                    )),
+                },
+                None => Err(schema::AdminResult::error(
+                    schema::AdminResultCode::DeadServer,
+                )),
+            },
+            Err(e) => Err(schema::AdminResult::error_with_message(
+                schema::AdminResultCode::InvalidInput,
+                format!("Invalid session ID: {e}"),
+            )),
+        };
+
+        schema::GetClientsAddrSessionsSessionIdInputResponse::Ok(match stream {
+            Ok(stream) => EventStream::new(
+                stream
+                    .map(move |item| schema::AdminResult::success(item).0)
+                    .boxed(),
+            ),
+            Err(err) => EventStream::new(once(async move { err.0 }).boxed()),
         })
     }
 }

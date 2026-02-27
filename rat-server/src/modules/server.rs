@@ -1,9 +1,12 @@
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
+use futures_util::stream::BoxStream;
 use rat_common::empty_module_impl;
 use rat_common::framework::{ModuleImpl, ModuleState};
-use rat_common::schema::{SessionCreateRequest, SessionInput, SessionMetadata, SystemInfo};
+use rat_common::schema::input::SessionInput;
+use rat_common::schema::output::SessionOutput;
+use rat_common::schema::{SessionCreateRequest, SessionMetadata, SystemInfo};
 use rat_common::snowflake::SnowflakeId;
 
 use crate::config::Config;
@@ -74,6 +77,16 @@ impl Server {
     ) -> anyhow::Result<Option<()>> {
         self._cc
             .post_clients_addr_sessions_session_id_input(addr, session_id, input)
+            .await
+    }
+
+    pub async fn get_clients_addr_sessions_session_id_input(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> Option<BoxStream<'static, SessionOutput>> {
+        self._cc
+            .get_clients_addr_sessions_session_id_input(addr, session_id)
             .await
     }
 }

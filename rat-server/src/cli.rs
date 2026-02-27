@@ -33,4 +33,9 @@ pub struct Arguments {
     /// Server-to-client request timeout in milliseconds.
     #[arg(long, default_value_t = 5000)]
     pub request_timeout: u64,
+
+    /// Capacity of the multi-producer-single-consumer channel to transfer client messages internally. Increasing this value
+    /// to prevent client message loss at the cost of increased memory usage.
+    #[arg(long, default_value_t = 50)]
+    pub client_mpsc_channel_capacity: usize,
 }
