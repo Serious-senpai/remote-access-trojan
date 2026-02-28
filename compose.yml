@@ -16,6 +16,20 @@ services:
     command: [ "--host", "server:12110", "--log-path", "/client.log" ]
     image: rat-centos-client
 
+  debian-client:
+    build:
+      context: .
+      target: debian-client-runtime
+    command: [ "--host", "server:12110", "--log-path", "/client.log" ]
+    image: rat-debian-client
+
+  alpine-client:
+    build:
+      context: .
+      target: alpine-client-runtime
+    command: [ "--host", "server:12110", "--log-path", "/client.log" ]
+    image: rat-alpine-client
+
   server:
     build:
       context: .

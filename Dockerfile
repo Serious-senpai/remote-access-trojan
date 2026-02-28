@@ -33,6 +33,16 @@ FROM centos:7 AS centos-client-runtime
 COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
 ENTRYPOINT [ "/rat-client" ]
 
+FROM debian:stable-20260223 AS debian-client-runtime
+
+COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
+ENTRYPOINT [ "/rat-client" ]
+
+FROM alpine:3.23 AS alpine-client-runtime
+
+COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
+ENTRYPOINT [ "/rat-client" ]
+
 FROM scratch AS server-runtime
 
 COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-server /rat-server
