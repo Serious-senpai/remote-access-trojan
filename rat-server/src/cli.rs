@@ -3,6 +3,10 @@ use std::path::PathBuf;
 use clap::{Parser, crate_description, crate_version};
 use log::LevelFilter;
 
+const fn _default_frontend_static_files() -> &'static str {
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../rat-frontend/dist")
+}
+
 #[derive(Debug, Parser)]
 #[command(
     long_about = crate_description!(),
@@ -10,13 +14,13 @@ use log::LevelFilter;
     version = crate_version!(),
 )]
 pub struct Arguments {
-    /// Port of the RAT server for clients to connect to.
-    #[arg(short, long, default_value_t = 12110)]
-    pub port: u16,
+    /// Host of the C&C server
+    #[arg(short, long, default_value = "0.0.0.0:12110")]
+    pub cc_host: String,
 
-    /// Port of the frontend server for the admin interface.
-    #[arg(long, default_value_t = 12111)]
-    pub admin_port: u16,
+    /// Host of the admin server.
+    #[arg(long, default_value = "127.0.0.1:12111")]
+    pub admin_host: String,
 
     /// The logging level.
     #[arg(long, default_value_t = LevelFilter::Info)]
@@ -38,4 +42,8 @@ pub struct Arguments {
     /// to prevent client message loss at the cost of increased memory usage.
     #[arg(long, default_value_t = 50)]
     pub client_mpsc_channel_capacity: usize,
+
+    /// Path to the frontend static files directory.
+    #[arg(long, default_value = _default_frontend_static_files())]
+    pub frontend_static_files: String,
 }

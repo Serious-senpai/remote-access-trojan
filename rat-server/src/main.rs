@@ -1,4 +1,7 @@
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::SocketAddrV4;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
@@ -24,11 +27,12 @@ async fn main() -> anyhow::Result<()> {
         heartbeat_interval: Duration::from_millis(arguments.heartbeat_interval),
         request_timeout: Duration::from_millis(arguments.request_timeout),
         client_mpsc_channel_capacity: arguments.client_mpsc_channel_capacity,
+        frontend_static_files: Arc::new(PathBuf::from(arguments.frontend_static_files)),
     };
 
     let server = Server::bind(
-        SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), arguments.admin_port),
-        SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), arguments.port),
+        SocketAddrV4::from_str(&arguments.admin_host)?,
+        SocketAddrV4::from_str(&arguments.cc_host)?,
         config,
     )
     .await?;

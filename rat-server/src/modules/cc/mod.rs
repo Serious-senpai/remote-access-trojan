@@ -221,7 +221,7 @@ impl ModuleImpl for CCServer {
 
         let mut clients = self._clients.write().await;
         if let Entry::Vacant(e) = clients.entry(addr) {
-            let client = ClientConnector::new(stream, addr, self._config);
+            let client = ClientConnector::new(stream, addr, self._config.clone());
             self.add_submodule(client.clone()).await;
             e.insert(client.clone());
 

@@ -6,12 +6,15 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
-    command: bash -c "sleep infinity"
+    command: bash -c "socat TCP-LISTEN:8000,fork,reuseaddr TCP:127.0.0.1:12111"
     container_name: devcontainer
     environment:
       CARGO_TARGET_DIR: /target
       RUST_BACKTRACE: "1"
-    image: ubuntu:24.04
+    ports:
+      - "5173:5173" # development Vite server
+      - "12110:12110" # C&C server
+      - "12111:8000" # OpenAPI server (socat-forwarded)
     volumes:
       - ..:/workspaces/remote-access-trojan
     working_dir: /workspaces/remote-access-trojan

@@ -1,5 +1,5 @@
 # Reference: https://docs.docker.com/reference/dockerfile/
-FROM rust:1.93 AS builder
+FROM rust:1.93 AS rust-builder
 
 RUN apt-get update && apt-get install -y musl-tools
 RUN rustup target add x86_64-unknown-linux-musl
@@ -15,12 +15,26 @@ RUN cargo build --release -p rat-server --target x86_64-unknown-linux-musl
 RUN strip target/x86_64-unknown-linux-musl/release/rat-client
 RUN strip target/x86_64-unknown-linux-musl/release/rat-server
 
-FROM scratch AS client-runtime
+FROM node:25.7 AS node-builder
 
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
+COPY rat-frontend /app
+WORKDIR /app
+
+RUN npm install
+RUN npm run build
+
+FROM ubuntu:24.04 AS ubuntu-client-runtime
+
+COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
+ENTRYPOINT [ "/rat-client" ]
+
+FROM centos:7 AS centos-client-runtime
+
+COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
 ENTRYPOINT [ "/rat-client" ]
 
 FROM scratch AS server-runtime
 
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/rat-server /rat-server
-ENTRYPOINT [ "/rat-server" ]
+COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-server /rat-server
+COPY --from=node-builder /app/dist /frontend
+ENTRYPOINT [ "/rat-server", "--frontend-static-files", "/frontend" ]

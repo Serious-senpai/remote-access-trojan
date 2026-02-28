@@ -1,0 +1,6 @@
+/.github/
+/.vscode/
+/target/
+
+**/compose.yml
+**/Dockerfile

@@ -10,6 +10,7 @@ use rat_common::schema::SessionCreateRequest;
 use rat_common::schema::input::SessionInput;
 use rat_common::schema::output::SessionOutput;
 
+use crate::config::Config;
 use crate::modules::admin::schema;
 use crate::modules::admin::state::AdminAPIState;
 
@@ -18,9 +19,17 @@ enum AdminAPITag {
     Clients,
 }
 
-pub struct AdminAPI;
+pub struct AdminAPI {
+    _config: Config,
+}
 
-#[OpenApi(prefix_path = "/api", tag = AdminAPITag::Clients)]
+impl AdminAPI {
+    pub fn new(config: Config) -> Self {
+        Self { _config: config }
+    }
+}
+
+#[OpenApi(tag = AdminAPITag::Clients)]
 impl AdminAPI {
     /// List all clients connected to the C&C server.
     #[oai(path = "/clients", method = "get")]

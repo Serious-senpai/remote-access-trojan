@@ -5,7 +5,8 @@
             "extensions": [
                 "github.vscode-github-actions",
                 "ms-azuretools.vscode-docker",
-                "rust-lang.rust-analyzer"
+                "rust-lang.rust-analyzer",
+                "vue.volar"
             ],
             "settings": {
                 "editor.formatOnSave": true,

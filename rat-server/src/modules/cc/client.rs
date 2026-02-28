@@ -40,7 +40,7 @@ impl ClientConnector {
             _info: RwLock::new(None),
             _writer: Mutex::new(writer),
             _peer: peer,
-            _config: config,
+            _config: config.clone(),
             _name: format!("ClientConnector [{peer}]"),
             _once_listeners: Mutex::new(LinkedList::new()),
             _persistent_listeners: Mutex::new(LinkedList::new()),

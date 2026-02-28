@@ -25,9 +25,9 @@ impl Server {
         cc_addr: SocketAddrV4,
         cc_config: Config,
     ) -> anyhow::Result<Arc<Self>> {
-        let cc = CCServer::bind(cc_addr, cc_config).await?;
+        let cc = CCServer::bind(cc_addr, cc_config.clone()).await?;
         Ok(Arc::new_cyclic(|this| {
-            let admin = AdminServer::bind(this.clone(), admin_addr);
+            let admin = AdminServer::bind(this.clone(), admin_addr, cc_config);
             Self {
                 _admin: admin.clone(),
                 _cc: cc.clone(),

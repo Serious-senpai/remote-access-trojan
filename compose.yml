@@ -2,20 +2,25 @@
 name: remote-access-trojan
 
 services:
-  client:
+  ubuntu-client:
     build:
       context: .
-      target: client-runtime
+      target: ubuntu-client-runtime
     command: [ "--host", "server:12110", "--log-path", "/client.log" ]
-    deploy:
-      replicas: 3
-    image: rat-client
+    image: rat-ubuntu-client
+
+  centos-client:
+    build:
+      context: .
+      target: centos-client-runtime
+    command: [ "--host", "server:12110", "--log-path", "/client.log" ]
+    image: rat-centos-client
 
   server:
     build:
       context: .
       target: server-runtime
-    command: [ "--log-path", "/client.log" ]
+    command: [ "--log-path", "/client.log", "--admin-host", "0.0.0.0:12111" ]
     hostname: server
     image: rat-server
     ports:

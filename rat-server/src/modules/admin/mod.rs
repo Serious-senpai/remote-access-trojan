@@ -8,12 +8,14 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use log::error;
 use poem::EndpointExt;
+use poem::endpoint::StaticFilesEndpoint;
 use poem::listener::TcpListener;
 use poem_openapi::OpenApiService;
 use rat_common::framework::{ModuleImpl, ModuleState};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+use crate::config::Config;
 use crate::modules::admin::state::AdminAPIState;
 use crate::modules::server::Server;
 
@@ -21,15 +23,17 @@ pub struct AdminServer {
     _address: SocketAddrV4,
     _server: Weak<Server>,
     _task: Mutex<Option<JoinHandle<()>>>,
+    _config: Config,
     _state: Arc<ModuleState>,
 }
 
 impl AdminServer {
-    pub fn bind(server: Weak<Server>, addr: SocketAddrV4) -> Arc<Self> {
+    pub fn bind(server: Weak<Server>, addr: SocketAddrV4, config: Config) -> Arc<Self> {
         Arc::new(Self {
             _address: addr,
             _server: server,
             _task: Mutex::new(None),
+            _config: config,
             _state: ModuleState::new(),
         })
     }
@@ -57,13 +61,20 @@ impl ModuleImpl for AdminServer {
 
     async fn before_hook(self: Arc<Self>) -> anyhow::Result<()> {
         let state = Arc::new(AdminAPIState::new(self._server.clone()));
-        let api_service = OpenApiService::new(api::AdminAPI, "Admin API", "1.0");
+        let api_service =
+            OpenApiService::new(api::AdminAPI::new(self._config.clone()), "Admin API", "0.1")
+                .server("/api");
 
         let spec = api_service.spec_endpoint();
         let swagger = api_service.swagger_ui();
 
         let app = poem::Route::new()
-            .nest("/", api_service)
+            .nest(
+                "/",
+                StaticFilesEndpoint::new(&*self._config.frontend_static_files)
+                    .index_file("index.html"),
+            )
+            .nest("/api", api_service)
             .nest("/docs/openapi.json", spec)
             .nest("/docs/swagger", swagger)
             .data(state);

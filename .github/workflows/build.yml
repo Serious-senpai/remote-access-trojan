@@ -21,7 +21,8 @@ jobs:
         run: |
           mkdir -p build
           docker image ls
-          docker save -o build/client.tar rat-client
+          docker save -o build/centos-client.tar rat-centos-client
+          docker save -o build/ubuntu-client.tar rat-ubuntu-client
           docker save -o build/server.tar rat-server
 
       - name: Upload Docker images
