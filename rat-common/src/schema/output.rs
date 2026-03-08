@@ -2,6 +2,7 @@ use poem_openapi::{Object, Union};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, Union)]
+#[oai(discriminator_name = "type", rename_all = "kebab-case")]
 pub enum SessionOutput {
     TerminalStdout(SessionOutputTerminalStdout),
     TerminalStderr(SessionOutputTerminalStderr),

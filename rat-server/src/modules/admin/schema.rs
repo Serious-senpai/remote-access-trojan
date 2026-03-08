@@ -4,6 +4,7 @@ use poem_openapi::payload::{EventStream, Json};
 use poem_openapi::types::{ParseFromJSON, ToJSON, Type};
 use poem_openapi::{ApiResponse, Enum, Object};
 use rat_common::schema::output::SessionOutput;
+use rat_common::schema::state::SessionState;
 use rat_common::schema::{SessionMetadata, SystemInfo};
 use rat_common::snowflake::SnowflakeId;
 
@@ -101,13 +102,19 @@ pub enum DeleteClientsAddrSessionsResponse {
 }
 
 #[derive(ApiResponse)]
-pub enum PostClientsAddrSessionsSessionIdInputResponse {
+pub enum PostClientsAddrSessionsSessionIdDataResponse {
     #[oai(status = 200)]
     Ok(Json<AdminResult<SnowflakeId>>),
 }
 
 #[derive(ApiResponse)]
-pub enum GetClientsAddrSessionsSessionIdInputResponse<T>
+pub enum GetClientsAddrSessionsSessionIdStateResponse {
+    #[oai(status = 200)]
+    Ok(Json<AdminResult<SessionState>>),
+}
+
+#[derive(ApiResponse)]
+pub enum GetClientsAddrSessionsSessionIdDataResponse<T>
 where
     T: futures_util::Stream<Item = AdminResult<SessionOutput>> + Send + 'static,
 {

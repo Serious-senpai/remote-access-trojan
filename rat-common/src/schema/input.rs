@@ -2,7 +2,7 @@ use poem_openapi::{Object, Union};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, Union)]
-#[oai(rename_all = "kebab-case")]
+#[oai(discriminator_name = "type", rename_all = "kebab-case")]
 pub enum SessionInput {
     TerminalStdin(SessionInputTerminalStdin),
     Close(SessionInputClose),

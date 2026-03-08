@@ -15,6 +15,7 @@ use log::{debug, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
 use rat_common::schema::input::SessionInput;
 use rat_common::schema::output::SessionOutput;
+use rat_common::schema::state::SessionState;
 use rat_common::schema::{
     ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest, SessionMetadata,
     SystemInfo,
@@ -129,11 +130,11 @@ impl CCServer {
         addr: &SocketAddr,
         session_id: SnowflakeId,
     ) -> anyhow::Result<Option<()>> {
-        self.post_clients_addr_sessions_session_id_input(addr, session_id, SessionInput::close())
+        self.post_clients_addr_sessions_session_id_data(addr, session_id, SessionInput::close())
             .await
     }
 
-    pub async fn post_clients_addr_sessions_session_id_input(
+    pub async fn post_clients_addr_sessions_session_id_data(
         &self,
         addr: &SocketAddr,
         session_id: SnowflakeId,
@@ -165,7 +166,37 @@ impl CCServer {
         }
     }
 
-    pub async fn get_clients_addr_sessions_session_id_input(
+    pub async fn get_clients_addr_sessions_session_id_state(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> anyhow::Result<Option<SessionState>> {
+        let entry = {
+            let clients = self._clients.read().await;
+            clients.get(addr).cloned()
+        };
+
+        match entry {
+            Some(client) => {
+                let response = client
+                    .request(&ServerMessage::new(ServerMessageData::SessionStateQuery {
+                        session_id,
+                    }))
+                    .await?;
+
+                if let ClientMessageData::SessionStateQueryResponse { data } = response.data {
+                    Ok(Some(data))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Unexpected response from client: {response:?}"
+                    ))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn get_clients_addr_sessions_session_id_data(
         &self,
         addr: &SocketAddr,
         session_id: SnowflakeId,

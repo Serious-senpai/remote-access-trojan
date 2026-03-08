@@ -1,5 +1,6 @@
 pub mod input;
 pub mod output;
+pub mod state;
 
 use std::sync::Arc;
 
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::input::SessionInput;
 use crate::schema::output::SessionOutput;
+use crate::schema::state::SessionState;
 use crate::snowflake::SnowflakeId;
 
 #[derive(Clone, Debug, Deserialize, Object, Serialize)]
@@ -75,6 +77,9 @@ pub enum ClientMessageData {
         session_id: SnowflakeId,
         output: SessionOutput,
     },
+    SessionStateQueryResponse {
+        data: SessionState,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -103,5 +108,8 @@ pub enum ServerMessageData {
     SessionInput {
         session_id: SnowflakeId,
         input: SessionInput,
+    },
+    SessionStateQuery {
+        session_id: SnowflakeId,
     },
 }

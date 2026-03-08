@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/clients": {
+    "/clients": {
         parameters: {
             query?: never;
             header?: never;
@@ -39,7 +39,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/clients/{addr}": {
+    "/clients/{addr}": {
         parameters: {
             query?: never;
             header?: never;
@@ -76,7 +76,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/clients/{addr}/sessions": {
+    "/clients/{addr}/sessions": {
         parameters: {
             query?: never;
             header?: never;
@@ -138,7 +138,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/clients/{addr}/sessions/{session_id}": {
+    "/clients/{addr}/sessions/{session_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -176,7 +176,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/clients/{addr}/sessions/{session_id}/data": {
+    "/clients/{addr}/sessions/{session_id}/data": {
         parameters: {
             query?: never;
             header?: never;
@@ -240,6 +240,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients/{addr}/sessions/{session_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query the current state of an existing session of a specific client */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    addr: string;
+                    session_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["AdminResult_SessionState"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -263,6 +301,12 @@ export interface components {
             code: components["schemas"]["AdminResultCode"];
             error?: string;
             data?: components["schemas"]["SessionOutput"];
+        };
+        /** AdminResult_SessionState */
+        AdminResult_SessionState: {
+            code: components["schemas"]["AdminResultCode"];
+            error?: string;
+            data?: components["schemas"]["SessionState"];
         };
         /** AdminResult_SnowflakeId */
         AdminResult_SnowflakeId: {
@@ -290,13 +334,27 @@ export interface components {
         };
         /** @enum {string} */
         SessionCreateRequest: "terminal";
-        SessionInput: components["schemas"]["SessionInputTerminalStdin"] | components["schemas"]["SessionInputClose"];
+        SessionInput: components["schemas"]["SessionInput_SessionInputTerminalStdin"] | components["schemas"]["SessionInput_SessionInputClose"];
         /** SessionInputClose */
         SessionInputClose: Record<string, never>;
         /** SessionInputTerminalStdin */
         SessionInputTerminalStdin: {
             data: string;
         };
+        SessionInput_SessionInputClose: {
+            /**
+             * @example close
+             * @enum {string}
+             */
+            type: "close";
+        } & components["schemas"]["SessionInputClose"];
+        SessionInput_SessionInputTerminalStdin: {
+            /**
+             * @example terminal-stdin
+             * @enum {string}
+             */
+            type: "terminal-stdin";
+        } & components["schemas"]["SessionInputTerminalStdin"];
         /** SessionMetadata */
         SessionMetadata: {
             /** Format: snowflake */
@@ -316,7 +374,7 @@ export interface components {
              */
             type: "terminal";
         } & components["schemas"]["SessionMetadataInnerTerminal"];
-        SessionOutput: components["schemas"]["SessionOutputTerminalStdout"] | components["schemas"]["SessionOutputTerminalStderr"] | components["schemas"]["SessionOutputTerminalClosed"];
+        SessionOutput: components["schemas"]["SessionOutput_SessionOutputTerminalStdout"] | components["schemas"]["SessionOutput_SessionOutputTerminalStderr"] | components["schemas"]["SessionOutput_SessionOutputTerminalClosed"];
         /** SessionOutputTerminalClosed */
         SessionOutputTerminalClosed: Record<string, never>;
         /** SessionOutputTerminalStderr */
@@ -327,6 +385,35 @@ export interface components {
         SessionOutputTerminalStdout: {
             data: string;
         };
+        SessionOutput_SessionOutputTerminalClosed: {
+            /**
+             * @example terminal-closed
+             * @enum {string}
+             */
+            type: "terminal-closed";
+        } & components["schemas"]["SessionOutputTerminalClosed"];
+        SessionOutput_SessionOutputTerminalStderr: {
+            /**
+             * @example terminal-stderr
+             * @enum {string}
+             */
+            type: "terminal-stderr";
+        } & components["schemas"]["SessionOutputTerminalStderr"];
+        SessionOutput_SessionOutputTerminalStdout: {
+            /**
+             * @example terminal-stdout
+             * @enum {string}
+             */
+            type: "terminal-stdout";
+        } & components["schemas"]["SessionOutputTerminalStdout"];
+        SessionState: components["schemas"]["SessionState_TerminalSessionState"];
+        SessionState_TerminalSessionState: {
+            /**
+             * @example terminal
+             * @enum {string}
+             */
+            type: "terminal";
+        } & components["schemas"]["TerminalSessionState"];
         /** SystemInfo */
         SystemInfo: {
             /** Format: uint64 */
@@ -345,6 +432,10 @@ export interface components {
             physical_core_count?: number;
             /** Format: uint64 */
             uptime: number;
+        };
+        /** TerminalSessionState */
+        TerminalSessionState: {
+            data: string;
         };
     };
     responses: never;

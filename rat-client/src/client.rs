@@ -143,6 +143,18 @@ impl Client {
                     None => anyhow::bail!("Received input for non-existent session {session_id}"),
                 }
             }
+            ServerMessageData::SessionStateQuery { session_id } => {
+                let sessions = self._sessions.lock().await;
+                match sessions.get(&session_id) {
+                    Some(session) => Ok(ClientMessage {
+                        id,
+                        data: ClientMessageData::SessionStateQueryResponse {
+                            data: session.query_current_state().await?,
+                        },
+                    }),
+                    None => anyhow::bail!("Received input for non-existent session {session_id}"),
+                }
+            }
         }
     }
 

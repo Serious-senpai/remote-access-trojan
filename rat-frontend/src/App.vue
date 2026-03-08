@@ -1,51 +1,78 @@
-<script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { api } from "./api/client";
-
-const loading = ref(true);
-const error = ref<string | null>(null);
-const clients = ref<any[]>([]);
-
-onMounted(async () => {
-  const { data, error: apiError } = await api.GET("/api/clients");
-
-  if (apiError) {
-    error.value = JSON.stringify(apiError);
-  } else if (data) {
-    clients.value = data.data ?? [];
-  }
-
-  loading.value = false;
-});
-</script>
-
 <template>
-  <div style="padding: 20px; font-family: sans-serif">
-    <h1>Clients</h1>
-
-    <div v-if="loading">Loading...</div>
-
-    <div v-else-if="error">
-      <h3 style="color: red">Error:</h3>
-      <pre>{{ error }}</pre>
+    <div id="app-shell">
+        <header class="app-header">
+            <router-link to="/" class="logo">RAT Control Panel</router-link>
+        </header>
+        <main class="app-main">
+            <router-view />
+        </main>
     </div>
-
-    <div v-else>
-      <div v-if="clients.length === 0">No clients found.</div>
-
-      <div v-for="(client, index) in clients" :key="index"
-           style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
-
-        <div><strong>Address:</strong> {{ client.address }}</div>
-
-        <div style="margin-top: 5px">
-          <strong>Host:</strong> {{ client.info?.host_name }}<br />
-          <strong>OS:</strong> {{ client.info?.name }} {{ client.info?.os_version }}<br />
-          <strong>Kernel:</strong> {{ client.info?.kernel_version }}<br />
-          <strong>CPU Arch:</strong> {{ client.info?.cpu_arch }}
-        </div>
-
-      </div>
-    </div>
-  </div>
 </template>
+
+<style>
+:root {
+    --bg: #0d1117;
+    --bg-surface: #161b22;
+    --bg-elevated: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79b8ff;
+    --danger: #f85149;
+    --success: #3fb950;
+    --warning: #d29922;
+    --radius: 6px;
+    --font-mono: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+}
+
+#app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    height: 48px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.logo {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 15px;
+    text-decoration: none;
+    letter-spacing: -0.3px;
+}
+
+.logo:hover {
+    color: var(--accent);
+}
+
+.app-main {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+</style>

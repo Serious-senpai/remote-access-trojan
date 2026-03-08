@@ -6,6 +6,7 @@ use rat_common::empty_module_impl;
 use rat_common::framework::{ModuleImpl, ModuleState};
 use rat_common::schema::input::SessionInput;
 use rat_common::schema::output::SessionOutput;
+use rat_common::schema::state::SessionState;
 use rat_common::schema::{SessionCreateRequest, SessionMetadata, SystemInfo};
 use rat_common::snowflake::SnowflakeId;
 
@@ -69,24 +70,34 @@ impl Server {
             .await
     }
 
-    pub async fn post_clients_addr_sessions_session_id_input(
+    pub async fn post_clients_addr_sessions_session_id_data(
         &self,
         addr: &SocketAddr,
         session_id: SnowflakeId,
         input: SessionInput,
     ) -> anyhow::Result<Option<()>> {
         self._cc
-            .post_clients_addr_sessions_session_id_input(addr, session_id, input)
+            .post_clients_addr_sessions_session_id_data(addr, session_id, input)
             .await
     }
 
-    pub async fn get_clients_addr_sessions_session_id_input(
+    pub async fn get_clients_addr_sessions_session_id_state(
+        &self,
+        addr: &SocketAddr,
+        session_id: SnowflakeId,
+    ) -> anyhow::Result<Option<SessionState>> {
+        self._cc
+            .get_clients_addr_sessions_session_id_state(addr, session_id)
+            .await
+    }
+
+    pub async fn get_clients_addr_sessions_session_id_data(
         &self,
         addr: &SocketAddr,
         session_id: SnowflakeId,
     ) -> Option<BoxStream<'static, SessionOutput>> {
         self._cc
-            .get_clients_addr_sessions_session_id_input(addr, session_id)
+            .get_clients_addr_sessions_session_id_data(addr, session_id)
             .await
     }
 }
