@@ -27,7 +27,7 @@ jobs:
           cargo build --release -p rat-server
 
       - name: Upload Windows executables
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows
           path: |
@@ -54,7 +54,7 @@ jobs:
           docker save -o build/server.tar rat-server
 
       - name: Upload Docker images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-images
           path: build
