@@ -30,7 +30,14 @@ UefiMain(
     if (EFI_ERROR(Status))
     {
         Print(L"[-] LoadImage failed: %r\n", Status);
+        gBS->Stall(5000000);
         return Status;
+    }
+
+    for (UINT32 i = 0; i < 5; i++)
+    {
+        Print(L"[+] Counting down %d seconds\n", 5 - i);
+        gBS->Stall(1000000);
     }
 
     Print(L"[+] Starting image...\n");

@@ -20,18 +20,5 @@ run:
 		-drive if=pflash,format=raw,file=/tmp/OVMF_VARS.fd \
 		-drive format=raw,file=fat:rw:esp
 
-run_windows:
-	$(MAKE) copy_ovmf
-	qemu-system-x86_64 \
-		-machine q35 \
-		-cpu qemu64 \
-		-m 4G \
-		-smp 4 \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-		-drive if=pflash,format=raw,file=/tmp/OVMF_VARS.fd \
-		-drive file=iso/Windows_10_Black_22H2_19045.2364x64_UEFI.iso,media=cdrom,readonly=on \
-		-boot d \
-		-device virtio-vga
-
 copy_ovmf:
 	cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/OVMF_VARS.fd
