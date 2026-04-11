@@ -45,6 +45,12 @@ jobs:
       - name: Build Docker images
         run: docker compose build
 
+      - name: Extract Linux executable
+        run: |
+          docker create --name temp rat-alpine-client
+          docker cp temp:/rat-client ./rat-client
+          docker rm temp
+
       - name: Save Docker images
         run: |
           mkdir -p build
@@ -54,6 +60,12 @@ jobs:
           docker save -o build/debian-client.tar rat-debian-client
           docker save -o build/ubuntu-client.tar rat-ubuntu-client
           docker save -o build/server.tar rat-server
+
+      - name: Upload Linux executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: rat-client
 
       - name: Upload Docker images
         uses: actions/upload-artifact@v7
