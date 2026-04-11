@@ -10,8 +10,8 @@ build:
 	source edksetup.sh && \
 	PACKAGES_PATH=$$(pwd):$$(pwd)/../../test-efi build -p ../../test-efi/MyPkg/MyPkg.dsc -a X64 -t GCC
 	rm -rf esp/
-	mkdir -p esp/EFI/BOOT/
-	cp extern/edk2/Build/MyPkg/DEBUG_GCC/X64/TestApp.efi esp/EFI/BOOT/BOOTX64.EFI
+	mkdir -p esp/EFI/Microsoft/Boot
+	cp extern/edk2/Build/MyPkg/DEBUG_GCC/X64/TestApp.efi esp/EFI/Microsoft/Boot/bootmgfw.efi
 
 run:
 	$(MAKE) copy_ovmf
