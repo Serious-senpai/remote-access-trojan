@@ -16,3 +16,7 @@
   UefiLib
   UefiBootServicesTableLib
   UefiApplicationEntryPoint
+  DevicePathLib
+
+[Protocols]
+  gEfiLoadedImageProtocolGuid

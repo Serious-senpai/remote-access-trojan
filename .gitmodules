@@ -1,3 +1,0 @@
-[submodule "extern/edk2"]
-	path = extern/edk2
-	url = https://github.com/tianocore/edk2

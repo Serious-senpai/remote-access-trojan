@@ -15,3 +15,6 @@ RUN /root/.cargo/bin/rustup target add x86_64-unknown-linux-gnu x86_64-unknown-l
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 ENV NVM_DIR=/root/.nvm
 RUN bash -c "source $NVM_DIR/nvm.sh && nvm install 25"
+
+RUN git clone -b stable/202508 --recursive https://github.com/tianocore/edk2 /edk2
+RUN cd /edk2 && make -C BaseTools

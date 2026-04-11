@@ -1,50 +1,80 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/DevicePathLib.h>
+#include <Protocol/LoadedImage.h>
 
-EFI_STATUS
-EFIAPI
-UefiMain(
-    IN EFI_HANDLE ImageHandle,
-    IN EFI_SYSTEM_TABLE *SystemTable)
+#define LOG0(fmt) Print(L"[%a:%u] " fmt, __FILE__, __LINE__)
+
+/** Format specifier list: https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Library/PrintLib.h */
+#define LOG(fmt, ...) Print(L"[%a:%u] " fmt, __FILE__, __LINE__, __VA_ARGS__)
+
+VOID Countdown(IN UINTN Seconds)
 {
-    Print(L"[+] Hello from TestApp!\n");
-
-    for (UINT32 i = 0; i < 5; i++)
+    for (UINTN i = 0; i < Seconds; i++)
     {
-        Print(L"[+] Counting down %d seconds\n", 5 - i);
+        LOG("Counting down %d seconds\n", Seconds - i);
         gBS->Stall(1000000);
     }
+}
 
-    Print(L"[+] Loading bootmgfw_old.efi...\n");
-
-    EFI_HANDLE NewImageHandle = NULL;
-    EFI_STATUS Status = gBS->LoadImage(
-        FALSE,
-        ImageHandle,
-        NULL,
-        L"\\EFI\\Microsoft\\Boot\\bootmgfw_old.efi",
-        0,
-        &NewImageHandle);
-
-    if (EFI_ERROR(Status))
-    {
-        Print(L"[-] LoadImage failed: %r\n", Status);
-        gBS->Stall(5000000);
-        return Status;
+#define ERROR_CHECK(status, fmt)  \
+    if (EFI_ERROR(status))        \
+    {                             \
+        LOG(fmt, status, status); \
+        Countdown(5);             \
+        return status;            \
     }
 
-    for (UINT32 i = 0; i < 5; i++)
+EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+{
+    LOG0("Loading bootmgfw_old.efi...\n");
+
+    EFI_LOADED_IMAGE_PROTOCOL *LoadedImage = NULL;
+    EFI_STATUS Status = gBS->HandleProtocol(ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&LoadedImage);
+    ERROR_CHECK(Status, "HandleProtocol failed: %r (0x%x)\n");
+
+    EFI_HANDLE WindowsImageHandle = NULL;
     {
-        Print(L"[+] Counting down %d seconds\n", 5 - i);
-        gBS->Stall(1000000);
+        // Avoid leaking DevicePath outside of this scope
+        EFI_DEVICE_PATH_PROTOCOL *DevicePath = FileDevicePath(LoadedImage->DeviceHandle, L"\\EFI\\Microsoft\\Boot\\bootmgfw_old.efi");
+        if (DevicePath == NULL)
+        {
+            LOG0("FileDevicePath failed\n");
+            Countdown(5);
+            return EFI_OUT_OF_RESOURCES;
+        }
+
+        Status = gBS->LoadImage(
+            FALSE,
+            ImageHandle,
+            DevicePath,
+            NULL,
+            0,
+            &WindowsImageHandle);
+        gBS->FreePool(DevicePath); // We will not use it anymore, so free the allocated memory
+        ERROR_CHECK(Status, "LoadImage failed: %r (0x%x)\n");
     }
 
-    Print(L"[+] Starting image...\n");
+    LOG0("Loaded bootmgfw_old.efi\n");
 
-    Status = gBS->StartImage(NewImageHandle, NULL, NULL);
+    EFI_LOADED_IMAGE_PROTOCOL *WindowsLoadedImage = NULL;
+    Status = gBS->HandleProtocol(WindowsImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&WindowsLoadedImage);
+    ERROR_CHECK(Status, "HandleProtocol failed: %r (0x%x)\n");
 
-    Print(L"[+] Returned from bootmgfw_old.efi: %r\n", Status);
+    // Read first 10 bytes
+    UINT8 *ImageBase = (UINT8 *)WindowsLoadedImage->ImageBase;
+    for (UINT8 *p = ImageBase; p < ImageBase + 10; p++)
+    {
+        LOG("Byte at 0x%p: 0x%02x (ASCII %c)\n", p, *p, *p);
+    }
 
-    return EFI_SUCCESS;
+    LOG0("Starting image...\n");
+
+    UINTN ExitDataSize = 0;
+    Status = gBS->StartImage(WindowsImageHandle, &ExitDataSize, NULL);
+
+    // Control should not reach here
+    LOG("Returned from bootmgfw_old.efi: %r (0x%x)\n", Status, Status);
+    return Status;
 }
