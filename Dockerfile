@@ -1,5 +1,5 @@
 # Reference: https://docs.docker.com/reference/dockerfile/
-FROM rust:1.93 AS rust-builder
+FROM rust:1.94 AS rust-builder
 
 RUN apt-get update && apt-get install -y musl-tools
 RUN rustup target add x86_64-unknown-linux-musl

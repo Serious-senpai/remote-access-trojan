@@ -10,6 +10,7 @@ services:
     container_name: devcontainer
     environment:
       CARGO_TARGET_DIR: /target
+      EDK2_DOCKER_USER_HOME: /home
       RUST_BACKTRACE: "1"
     ports:
       - "5173:5173" # development Vite server
@@ -17,4 +18,5 @@ services:
       - "12111:8000" # OpenAPI server (socat-forwarded)
     volumes:
       - ..:/workspaces/remote-access-trojan
+      - ../target/home:/home
     working_dir: /workspaces/remote-access-trojan
