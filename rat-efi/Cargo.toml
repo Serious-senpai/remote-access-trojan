@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 log = { version = "0.4.29", default-features = false }
 uefi = { version = "0.37.0", default-features = false, features = [ "alloc", "global_allocator", "logger", "panic_handler" ] }
+uefi-raw = { version = "0.14.0", default-features = false }
 
 [lints.clippy]
 absolute_paths = "warn"

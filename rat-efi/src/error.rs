@@ -51,3 +51,17 @@ impl UefiErrorMessage for DevicePathUtilitiesError {
         )
     }
 }
+
+pub trait UefiResultConvertable {
+    type Output;
+
+    fn convert(self, message: impl Into<String>) -> uefi::Result<Self::Output, String>;
+}
+
+impl<T, E: UefiErrorMessage> UefiResultConvertable for Result<T, E> {
+    type Output = T;
+
+    fn convert(self, message: impl Into<String>) -> uefi::Result<Self::Output, String> {
+        self.map_err(|e| e.convert(message))
+    }
+}
