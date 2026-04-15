@@ -2,11 +2,20 @@ SHELL := /bin/bash
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 build:
-	cd /edk2 && \
-	source edksetup.sh && \
-	PACKAGES_PATH=/edk2:$(ROOT)/test-efi build -p $(ROOT)/test-efi/MyPkg/MyPkg.dsc -a X64 -t GCC
+	cd $(ROOT) && cargo build
+	cd $(ROOT)/rat-efi && cargo build
 	mkdir -p $(ROOT)/esp/EFI/BOOT
-	cp /edk2/Build/MyPkg/DEBUG_GCC/X64/TestApp.efi $(ROOT)/esp/EFI/BOOT/BOOTX64.EFI
+	cp /target/x86_64-unknown-uefi/debug/rat-efi.efi $(ROOT)/esp/EFI/BOOT/BOOTX64.efi
+
+build-release:
+	cd $(ROOT) && cargo build --release
+	cd $(ROOT)/rat-efi && cargo build --release
+	mkdir -p $(ROOT)/esp/EFI/BOOT
+	cp /target/x86_64-unknown-uefi/release/rat-efi.efi $(ROOT)/esp/EFI/BOOT/BOOTX64.efi
+
+clippy:
+	cd $(ROOT) && cargo clippy
+	cd $(ROOT)/rat-efi && cargo clippy
 
 run:
 	cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/OVMF_VARS.fd

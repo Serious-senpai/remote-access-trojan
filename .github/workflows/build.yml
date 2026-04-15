@@ -34,6 +34,32 @@ jobs:
             target/release/rat-client.exe
             target/release/rat-server.exe
 
+  uefi-image:
+    name: Build UEFI image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.94
+          cache: false
+          rustflags: ""
+          target: x86_64-unknown-uefi
+
+      - name: Build UEFI image
+        working-directory: rat-efi
+        run: cargo build --release
+
+      - name: Upload UEFI image
+        uses: actions/upload-artifact@v7
+        with:
+          name: uefi-image
+          path: rat-efi/target/x86_64-unknown-uefi/release/rat-efi.efi
+
   docker:
     name: Build Docker images
     runs-on: ubuntu-latest
