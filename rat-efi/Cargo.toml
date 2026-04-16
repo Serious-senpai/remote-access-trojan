@@ -10,6 +10,23 @@ log = { version = "0.4.29", default-features = false }
 uefi = { version = "0.37.0", default-features = false, features = [ "alloc", "global_allocator", "logger", "panic_handler" ] }
 uefi-raw = { version = "0.14.0", default-features = false }
 
+[profile.dev]
+debug = 2
+lto = "off"
+opt-level = 0
+overflow-checks = true
+panic = "unwind"
+strip = false
+
+[profile.release]
+codegen-units = 1
+debug = 0
+lto = "fat"
+opt-level = 3
+overflow-checks = false
+panic = "abort"
+strip = true
+
 [lints.clippy]
 absolute_paths = "warn"
 assigning_clones = "warn"

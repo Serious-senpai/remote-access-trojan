@@ -5,15 +5,10 @@
             "extensions": [
                 "github.vscode-github-actions",
                 "ms-azuretools.vscode-docker",
-                "ms-vscode.cpptools",
-                "ms-vscode.cpptools-extension-pack",
                 "rust-lang.rust-analyzer",
                 "vue.volar"
             ],
             "settings": {
-                "C_Cpp.default.includePath": [
-                    "/edk2/MdePkg/Include"
-                ],
                 "editor.formatOnSave": true,
                 "editor.tabSize": 4,
                 "extensions.ignoreRecommendations": false,
