@@ -1,4 +1,3 @@
-use core::ffi::c_int;
 use core::mem;
 use core::sync::atomic::{AtomicI64, Ordering};
 
@@ -12,24 +11,11 @@ type BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
     params: *mut u8,
     top_of_stack: *mut u8,
     page_table_base: *mut u8,
-    flags: c_int,
+    flags: i32,
     descriptor_table_context: *mut u8,
 ) -> i64;
 
 static ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: AtomicI64 = AtomicI64::new(0);
-
-// const ARCHPX64_TRANSFER_TO64_BIT_APPLICATION_ASM: &[[u8; 21]] = &[
-//     [
-//         0x00, 0x48, 0x89, 0x05, 0x84, 0xD9, 0x07, 0x00, // 8 bytes before
-//         0xE8, 0x8F, 0xE2, 0x03, 0x00, // call Archpx64TransferTo64BitApplicationAsm
-//         0xE8, 0x42, 0xB9, 0xFB, 0xFF, 0x84, 0xC0, 0x74, // 8 bytes after
-//     ],
-//     [
-//         0x00, 0x48, 0x89, 0x05, 0xC0, 0xD9, 0x07, 0x00, // 8 bytes before
-//         0xE8, 0xFB, 0xE0, 0x03, 0x00, // call Archpx64TransferTo64BitApplicationAsm
-//         0xE8, 0x42, 0xC6, 0xFB, 0xFF, 0x84, 0xC0, 0x74, // 8 bytes after
-//     ],
-// ];
 
 const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
     0x03, 0x4D, 0x67, 0x48, 0x89, 0x44, 0x24, 0x28, // 8 bytes before
@@ -38,7 +24,7 @@ const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
 ]];
 
 const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION_PATCHED: &[u8] = &[
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // movabs rax, imm64
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, imm64
     0xFF, 0xD0, // call rax
 ];
 
@@ -58,14 +44,16 @@ unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     params: *mut u8,
     top_of_stack: *mut u8,
     page_table_base: *mut u8,
-    flags: c_int,
+    flags: i32,
     descriptor_table_context: *mut u8,
 ) -> i64 {
     patch_winload(entrypoint);
 
-    let original = ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire);
+    let original =
+        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire) as *const ();
     unsafe {
-        let original_fn = mem::transmute::<i64, BlpArchTransferTo64BitApplicationFn>(original);
+        let original_fn =
+            mem::transmute::<*const (), BlpArchTransferTo64BitApplicationFn>(original);
         original_fn(
             entrypoint,
             params,

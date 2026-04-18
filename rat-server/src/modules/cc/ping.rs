@@ -51,13 +51,13 @@ impl ModuleImpl for ClientPing {
             && let Err(e) = connector
                 .request(&ServerMessage::new(ServerMessageData::Ping))
                 .await
-            {
-                error!(
-                    "Ping timed out to {}: {e}. Disconnecting from client.",
-                    self._peer,
-                );
-                connector.stop();
-            }
+        {
+            error!(
+                "Ping timed out to {}: {e}. Disconnecting from client.",
+                self._peer,
+            );
+            connector.stop();
+        }
 
         Ok(())
     }

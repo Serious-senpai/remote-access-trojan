@@ -7,8 +7,13 @@ edition = "2024"
 
 [dependencies]
 log = { version = "0.4.29", default-features = false }
-uefi = { version = "0.37.0", default-features = false, features = [ "alloc", "global_allocator", "logger", "panic_handler" ] }
+uefi = { version = "0.37.0", default-features = false, features = ["alloc", "global_allocator", "logger", "panic_handler"] }
 uefi-raw = { version = "0.14.0", default-features = false }
+
+[dependencies.windows-sys]
+version = "0.61.2"
+default-features = false
+features = ["Win32", "Win32_System", "Win32_System_Diagnostics", "Win32_System_Diagnostics_Debug", "Win32_System_SystemInformation", "Win32_System_SystemServices"]
 
 [profile.dev]
 debug = 2

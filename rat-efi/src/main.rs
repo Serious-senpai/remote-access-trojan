@@ -5,6 +5,7 @@ extern crate alloc;
 
 mod error;
 mod hooks;
+mod patcher;
 mod utils;
 
 use alloc::string::{String, ToString};
@@ -16,6 +17,7 @@ use uefi::proto::device_path::build::DevicePathBuilder;
 use uefi::proto::device_path::build::media::FilePath;
 use uefi::proto::loaded_image::LoadedImage;
 use uefi::{CStr16, Status, boot, helpers, proto};
+use windows_sys::w;
 
 use crate::error::{UefiErrorMessage, UefiResultConvertable};
 use crate::hooks::{bootmgfw, efi};
@@ -34,12 +36,14 @@ fn entrypoint() -> uefi::Result<(), String> {
         .device_path()
         .convert("Cannot get device path protocol")?;
 
-    let mut utf16_buffer = [0; 128];
-    let path_name = CStr16::from_str_with_buf(
-        "\\EFI\\Microsoft\\Boot\\bootmgfw_old.efi",
-        &mut utf16_buffer,
-    )
-    .map_err(|e| e.convert(format!("Cannot construct UCS-2 string ({e})")))?;
+    let bootmgfw_path =
+        unsafe { slice::from_raw_parts(w!("\\EFI\\Microsoft\\Boot\\bootmgfw_old.efi"), 1024) };
+    let path_name = CStr16::from_u16_until_nul(bootmgfw_path).map_err(|_| {
+        uefi::Error::new(
+            Status::COMPROMISED_DATA,
+            "Cannot construct UCS-2 string".to_string(),
+        )
+    })?;
 
     let mut buffer = vec![];
     let bootmgfw_device_path = our_device_path
@@ -62,7 +66,7 @@ fn entrypoint() -> uefi::Result<(), String> {
     .convert("Cannot load image")?;
 
     info!("Loaded bootmgfw_old.efi.");
-    efi::patch_load_image();
+    efi::patch_system_table();
 
     let bootmgfw_image = boot::open_protocol_exclusive::<LoadedImage>(bootmgfw_handle)
         .convert("Cannot open protocol of bootmgfw_old.efi")?;
@@ -72,7 +76,7 @@ fn entrypoint() -> uefi::Result<(), String> {
     bootmgfw::patch_bootmgfw(bootmgfw_buffer);
 
     info!("Starting bootmgfw_old.efi...");
-    countdown(5);
+    countdown(3);
 
     boot::start_image(bootmgfw_handle).convert("Cannot start image")
 }
