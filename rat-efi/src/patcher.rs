@@ -37,41 +37,6 @@ impl PatternFinder {
     }
 }
 
-pub struct PatternPatcher {
-    _finder: PatternFinder,
-    _patched: &'static [u8],
-    _postfix: Arc<dyn Fn(&Self, &mut [u8])>,
-}
-
-impl PatternPatcher {
-    pub fn new(
-        original: &'static [u8],
-        patched: &'static [u8],
-        postfix: Arc<dyn Fn(&Self, &mut [u8])>,
-    ) -> Self {
-        Self {
-            _finder: PatternFinder::new(original),
-            _patched: patched,
-            _postfix: postfix,
-        }
-    }
-
-    pub fn patch(&self, buffer: &mut [u8]) -> Option<PatchResult> {
-        match self._finder.find_offset(buffer) {
-            Some(offset) => {
-                let modify = &mut buffer[offset..];
-
-                let original = modify[..self._patched.len().max(self._finder.len())].to_vec();
-                modify[..self._patched.len()].copy_from_slice(self._patched);
-                (self._postfix)(self, modify);
-
-                Some(PatchResult { offset, original })
-            }
-            None => None,
-        }
-    }
-}
-
 pub struct VariablePatternFinder<const SIZE: usize> {
     _patterns: Vec<PatternFinder>,
 }
@@ -102,34 +67,5 @@ impl<const SIZE: usize> VariablePatternFinder<SIZE> {
 
     pub fn find_ref<'a>(&self, buffer: &'a [u8]) -> Option<&'a [u8]> {
         self.find_offset(buffer).map(|i| &buffer[i..])
-    }
-}
-
-pub struct VariablePatternPatcher<const SIZE: usize> {
-    _patchers: Vec<PatternPatcher>,
-}
-
-impl<const SIZE: usize> VariablePatternPatcher<SIZE> {
-    pub fn new(
-        original: &'static [[u8; SIZE]],
-        patched: &'static [u8],
-        postfix: Arc<dyn Fn(&PatternPatcher, &mut [u8])>,
-    ) -> Self {
-        Self {
-            _patchers: original
-                .iter()
-                .map(|orig| PatternPatcher::new(orig, patched, postfix.clone()))
-                .collect(),
-        }
-    }
-
-    pub fn patch(&self, buffer: &mut [u8]) -> Option<PatchResult> {
-        for patcher in &self._patchers {
-            if let Some(result) = patcher.patch(buffer) {
-                return Some(result);
-            }
-        }
-
-        None
     }
 }

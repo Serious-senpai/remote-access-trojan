@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::arch::{asm, naked_asm};
+use core::arch::{asm, global_asm};
 use core::ffi::CStr;
 use core::sync::atomic::{AtomicI64, Ordering};
 use core::{mem, slice};
@@ -12,7 +12,7 @@ use windows_sys::Win32::System::Diagnostics::Debug::{
 use windows_sys::Win32::System::SystemServices::{IMAGE_DOS_HEADER, IMAGE_EXPORT_DIRECTORY};
 
 use crate::hooks::types::_LOADER_PARAMETER_BLOCK;
-use crate::patcher::{VariablePatternFinder, VariablePatternPatcher};
+use crate::patcher::VariablePatternFinder;
 use crate::{fill_nops, utils};
 
 type BlpArchSwitchContextFn = unsafe extern "efiapi" fn(ctx: i32) -> *mut u8;
@@ -76,11 +76,12 @@ const OSL_ARCH_TRANSFER_TO_KERNEL: &[[u8; 21]] = &[
     ],
 ];
 
-const OSL_ARCH_TRANSFER_TO_KERNEL_PATCHED: &[u8] = &[
-    0x00, 0x49, 0x89, 0x80, 0xD0, 0x00, 0x00, 0x00, // 8 bytes before
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, imm64
-    0xFF, 0xD0, // call rax
-];
+global_asm!(
+    "OslArchTransferToKernelHooked_trampoline:",
+    "movabs rax, 0",
+    "call rax",
+    "OslArchTransferToKernelHooked_trampoline_end:",
+);
 
 const OSL_FWP_KERNEL_SETUP_PHASE1: &[[u8; 25]] = &[[
     0x81, 0xC8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xCF, // 8 bytes before
@@ -91,16 +92,10 @@ const OSL_FWP_KERNEL_SETUP_PHASE1: &[[u8; 25]] = &[[
     0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, // mov r8d, 1
 ]];
 
-const OSL_FWP_KERNEL_SETUP_PHASE1_PATCHED: &[u8] = &[
-    0x81, 0xC8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xCF, // 8 bytes before
-    0x50, // push rax
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, imm64
-    0xFF, 0xD0, // call rax
-    0x78, 0x0C, // js 0xC
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, imm64
-    0xFF, 0xE0, // jmp rax
-    0x58, // pop rax
-];
+unsafe extern "efiapi" {
+    fn OslArchTransferToKernelHooked_trampoline();
+    fn OslArchTransferToKernelHooked_trampoline_end();
+}
 
 unsafe extern "efiapi" fn blp_arch_switch_context(ctx: i32) -> *mut u8 {
     let original = ORIGINAL_BLP_ARCH_SWITCH_CONTEXT.load(Ordering::Acquire) as *const ();
@@ -249,20 +244,20 @@ pub fn patch_winload(entrypoint: *mut u8) {
         }
     }
 
-    let patcher = VariablePatternPatcher::new(
-        OSL_ARCH_TRANSFER_TO_KERNEL,
-        OSL_ARCH_TRANSFER_TO_KERNEL_PATCHED,
-        Arc::new(|_, modify| {
-            let target_func_addr = osl_arch_transfer_to_kernel_hooked as *const u8 as i64;
-            modify[10..18].copy_from_slice(&target_func_addr.to_le_bytes());
-        }),
-    );
-    match patcher.patch(winload) {
-        Some(p) => {
-            let original_call_addr = winload.as_ptr().wrapping_byte_add(p.offset) as i64
-                + 5
-                + i64::from(utils::extract_call_rel32(&p.original[8..]));
+    match VariablePatternFinder::new(OSL_ARCH_TRANSFER_TO_KERNEL).find_mut(winload) {
+        Some(original) => {
+            let original = &mut original[8..];
+            let original_call_addr =
+                original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
             ORIGINAL_OSL_ARCH_TRANSFER_TO_KERNEL.store(original_call_addr, Ordering::Release);
+
+            let target_func_addr = osl_arch_transfer_to_kernel_hooked as *const u8 as i64;
+            let patched = utils::get_function_code(
+                OslArchTransferToKernelHooked_trampoline,
+                OslArchTransferToKernelHooked_trampoline_end,
+            );
+            original[..patched.len()].copy_from_slice(patched);
+            original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
             info!("Patched call to OslArchTransferToKernel");
         }

@@ -94,11 +94,11 @@ pub fn patch_system_table() {
                 info!("Hooked boot services successfully.");
             }
             None => {
-                warn!("Cannot get pointer to boot services. load_image hooking will not work.");
+                warn!("Cannot get pointer to boot services. Boot services hooking will not work.");
             }
         },
         None => {
-            warn!("Cannot get pointer to system table. load_image hooking will not work.");
+            warn!("Cannot get pointer to system table. Boot services hooking will not work.");
         }
     }
 }

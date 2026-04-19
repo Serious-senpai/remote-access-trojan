@@ -1,10 +1,12 @@
+use core::arch::global_asm;
 use core::mem;
 use core::sync::atomic::{AtomicI64, Ordering};
 
 use log::{error, info};
 
 use crate::hooks::winload::patch_winload;
-use crate::utils::find_pattern;
+use crate::patcher::VariablePatternFinder;
+use crate::utils;
 
 type BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
     entrypoint: *mut u8,
@@ -23,10 +25,12 @@ const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
     0x44, 0x8B, 0xF0, 0xE8, 0xA6, 0xBF, 0x00, 0x00, // 8 bytes after
 ]];
 
-const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION_PATCHED: &[u8] = &[
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, imm64
-    0xFF, 0xD0, // call rax
-];
+global_asm!(
+    "BlpArchTransferTo64BitApplicationHooked_trampoline:",
+    "movabs rax, 0",
+    "call rax",
+    "BlpArchTransferTo64BitApplicationHooked_trampoline_end:",
+);
 
 const BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
     0xCC, // 1 byte before (int)
@@ -34,10 +38,19 @@ const BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
     0x41, 0x55, 0x41, 0x56, 0x48, 0x8B, 0xEC, 0x48, // next 8 bytes
 ]];
 
-const BM_FW_VERIFY_SELF_INTEGRITY_PATCHED: &[u8] = &[
-    0x48, 0x31, 0xC0, // xor rax, rax
-    0xC3, // ret
-];
+global_asm!(
+    "BmFwVerifySelfIntegrity_trampoline:",
+    "xor rax, rax",
+    "ret",
+    "BmFwVerifySelfIntegrity_trampoline_end:",
+);
+
+unsafe extern "efiapi" {
+    fn BlpArchTransferTo64BitApplicationHooked_trampoline();
+    fn BlpArchTransferTo64BitApplicationHooked_trampoline_end();
+    fn BmFwVerifySelfIntegrity_trampoline();
+    fn BmFwVerifySelfIntegrity_trampoline_end();
+}
 
 unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     entrypoint: *mut u8,
@@ -65,39 +78,30 @@ unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     }
 }
 
-pub fn patch_bootmgfw(buffer: &mut [u8]) {
+pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
     info!("Patching bootmgfw_old.efi...");
 
-    let mut patched = false;
-    for pattern in BM_FW_VERIFY_SELF_INTEGRITY {
-        if let Some(offset) = find_pattern(buffer, pattern) {
-            let modify = &mut buffer[offset + 1..];
-            modify[..BM_FW_VERIFY_SELF_INTEGRITY_PATCHED.len()]
-                .copy_from_slice(BM_FW_VERIFY_SELF_INTEGRITY_PATCHED);
-
-            info!("Patched BmFwVerifySelfIntegrity at offset {offset}");
-            patched = true;
-            break;
+    match VariablePatternFinder::new(BM_FW_VERIFY_SELF_INTEGRITY).find_mut(bootmgfw) {
+        Some(original) => {
+            let original = &mut original[1..];
+            let patched = utils::get_function_code(
+                BmFwVerifySelfIntegrity_trampoline,
+                BmFwVerifySelfIntegrity_trampoline_end,
+            );
+            original[..patched.len()].copy_from_slice(patched);
+            info!("Patched BmFwVerifySelfIntegrity");
+        }
+        None => {
+            error!("Cannot find BmFwVerifySelfIntegrity");
+            return;
         }
     }
 
-    if !patched {
-        error!("Cannot find BmFwVerifySelfIntegrity");
-        return;
-    }
-
-    patched = false;
-    for pattern in BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION {
-        if let Some(offset) = find_pattern(buffer, pattern) {
-            let modify = &mut buffer[offset + 8..];
-
-            let original_call_addr = modify.as_ptr() as i64
-                + 5
-                + i64::from(i32::from_le_bytes({
-                    let mut value = [0; 4];
-                    value.copy_from_slice(&modify[1..5]);
-                    value
-                }));
+    match VariablePatternFinder::new(BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw) {
+        Some(original) => {
+            let original = &mut original[8..];
+            let original_call_addr =
+                original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
             ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION
                 .store(original_call_addr, Ordering::Release);
 
@@ -111,17 +115,17 @@ pub fn patch_bootmgfw(buffer: &mut [u8]) {
             // corruption (maybe?).
             let target_func_addr =
                 blp_arch_transfer_to64_bit_application_hooked as *const u8 as i64;
-            modify[..BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION_PATCHED.len()]
-                .copy_from_slice(BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION_PATCHED);
-            modify[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
+            let patched = utils::get_function_code(
+                BlpArchTransferTo64BitApplicationHooked_trampoline,
+                BlpArchTransferTo64BitApplicationHooked_trampoline_end,
+            );
+            original[..patched.len()].copy_from_slice(patched);
+            original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
-            info!("Patched BlpArchTransferTo64BitApplication at offset {offset}");
-            patched = true;
-            break;
+            info!("Patched call to BlpArchTransferTo64BitApplication");
         }
-    }
-
-    if !patched {
-        error!("Cannot find BlpArchTransferTo64BitApplication");
+        None => {
+            error!("Cannot find BlpArchTransferTo64BitApplication");
+        }
     }
 }

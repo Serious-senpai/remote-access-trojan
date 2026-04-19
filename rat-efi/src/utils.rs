@@ -75,7 +75,7 @@ macro_rules! fill_nops {
     };
 }
 
-macro_rules! _find_pe_image {
+macro_rules! find_pe_image {
     ($code:ident, $qualifier:ident, $deref:ident, $from_raw_parts:ident) => {
         loop {
             let ptr = $code as *$qualifier IMAGE_DOS_HEADER;
@@ -101,11 +101,11 @@ macro_rules! _find_pe_image {
 }
 
 // pub unsafe fn find_pe_image<'a>(mut code: *const u8) -> Option<&'a [u8]> {
-//     _find_pe_image!(code, const, as_ref, from_raw_parts)
+//     find_pe_image!(code, const, as_ref, from_raw_parts)
 // }
 
 pub unsafe fn find_pe_image_mut<'a>(mut code: *mut u8) -> Option<&'a mut [u8]> {
-    _find_pe_image!(code, mut, as_mut, from_raw_parts_mut)
+    find_pe_image!(code, mut, as_mut, from_raw_parts_mut)
 }
 
 pub fn write_cr0(cr0: u64) {
@@ -127,4 +127,17 @@ pub fn read_cr0() -> u64 {
     }
 
     cr0
+}
+
+pub fn get_function_code(
+    start: unsafe extern "efiapi" fn(),
+    end: unsafe extern "efiapi" fn(),
+) -> &'static [u8] {
+    let start_ptr = start as *const u8;
+    let end_ptr = end as *const u8;
+
+    let start_addr = start_ptr as usize;
+    let end_addr = end_ptr as usize;
+
+    unsafe { slice::from_raw_parts(start_ptr, end_addr.saturating_sub(start_addr)) }
 }
