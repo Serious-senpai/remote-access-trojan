@@ -1,0 +1,10 @@
+[package]
+name = "utils-com-reader"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+named_pipe = { workspace = true }
+
+[lints]
+workspace = true

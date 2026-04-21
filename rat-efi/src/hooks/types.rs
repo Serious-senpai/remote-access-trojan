@@ -1,10 +1,11 @@
-// Source: https://github.com/memN0ps/redlotus-rs/blob/81747729dfe5e4009acf22e869b756d5d2dd7f91/bootkit/src/boot/includes.rs
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]
+/// Reference:
+/// - https://github.com/memN0ps/redlotus-rs/blob/81747729dfe5e4009acf22e869b756d5d2dd7f91/bootkit/src/boot/includes.rs
+/// - https://github.com/Mattiwatti/EfiGuard/blob/d1d9d858565d53f2b76249554765a7ed10e234c6/EfiGuardDxe/arc.h#L1396-L1408
 // Credit: https://www.vergiliusproject.com/kernels/x64/Windows%2011/22H2%20(2022%20Update)/_LOADER_PARAMETER_BLOCK
 // Some of these structs could be incorrect but most are correct.
-
 use core::ffi::c_void;
 
 // 0x10 bytes (sizeof)
@@ -348,4 +349,19 @@ pub struct _NON_PAGED_DEBUG_INFO {
     pub CheckSum: u32,        // 0x10
     pub SizeOfImage: u32,     // 0x14
     pub ImageBase: u64,       // 0x18
+}
+
+#[repr(C)]
+pub struct _BLDR_DATA_TABLE_ENTRY {
+    pub kldr_entry: _KLDR_DATA_TABLE_ENTRY,
+    pub certificate_publisher: _UNICODE_STRING,
+    pub certificate_issuer: _UNICODE_STRING,
+    pub image_hash: *mut core::ffi::c_void,
+    pub certificate_thumbprint: *mut core::ffi::c_void,
+    pub image_hash_algorithm: u32,
+    pub thumbprint_hash_algorithm: u32,
+    pub image_hash_length: u32,
+    pub certificate_thumbprint_length: u32,
+    pub load_information: u32,
+    pub flags: u32,
 }

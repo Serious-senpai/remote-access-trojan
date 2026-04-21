@@ -6,8 +6,9 @@ edition = "2024"
 [workspace]
 
 [dependencies]
+com_logger = { version = "0.1.2", default-features = false }
 log = { version = "0.4.29", default-features = false }
-uefi = { version = "0.37.0", default-features = false, features = ["alloc", "global_allocator", "logger", "panic_handler"] }
+uefi = { version = "0.37.0", default-features = false, features = ["alloc", "global_allocator", "panic_handler"] }
 uefi-raw = { version = "0.14.0", default-features = false }
 
 [dependencies.windows-sys]

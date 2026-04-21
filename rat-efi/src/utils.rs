@@ -1,11 +1,13 @@
 use core::arch::asm;
-use core::slice;
 use core::time::Duration;
+use core::{mem, slice};
 
 use log::info;
 use uefi::boot;
 use windows_sys::Win32::System::Diagnostics::Debug::IMAGE_NT_HEADERS64;
 use windows_sys::Win32::System::SystemServices::IMAGE_DOS_HEADER;
+
+use crate::hooks::types::{_BLDR_DATA_TABLE_ENTRY, _KLDR_DATA_TABLE_ENTRY, _LIST_ENTRY};
 
 pub fn countdown(seconds: u64) {
     for i in 0..seconds {
@@ -129,6 +131,24 @@ pub fn read_cr0() -> u64 {
     cr0
 }
 
+pub struct DisableWriteProtection {
+    _original_cr0: u64,
+}
+
+impl DisableWriteProtection {
+    pub fn new() -> Self {
+        let cr0 = read_cr0();
+        write_cr0(cr0 & !0x10000);
+        Self { _original_cr0: cr0 }
+    }
+}
+
+impl Drop for DisableWriteProtection {
+    fn drop(&mut self) {
+        write_cr0(self._original_cr0);
+    }
+}
+
 pub fn get_function_code(
     start: unsafe extern "efiapi" fn(),
     end: unsafe extern "efiapi" fn(),
@@ -140,4 +160,55 @@ pub fn get_function_code(
     let end_addr = end_ptr as usize;
 
     unsafe { slice::from_raw_parts(start_ptr, end_addr.saturating_sub(start_addr)) }
+}
+
+/// Reference: https://github.com/Mattiwatti/EfiGuard/blob/801ad43372021d3806ef1be22dddfd0fb860693b/EfiGuardDxe/PatchWinload.c#L57-L79
+pub unsafe fn get_boot_loaded_module<'a>(
+    load_order_list_head: *const _LIST_ENTRY,
+    module_name: *const u16,
+) -> Option<&'a _BLDR_DATA_TABLE_ENTRY> {
+    let mut entry = load_order_list_head;
+    'l: loop {
+        match unsafe { entry.as_ref() } {
+            Some(e) => {
+                entry = e.Flink as *const _LIST_ENTRY;
+                if entry.is_null() || entry == load_order_list_head {
+                    break None;
+                }
+
+                let entry = entry
+                    .wrapping_byte_sub(mem::offset_of!(_KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
+                    .wrapping_byte_sub(mem::offset_of!(_BLDR_DATA_TABLE_ENTRY, kldr_entry))
+                    as *const _BLDR_DATA_TABLE_ENTRY;
+
+                match unsafe { entry.as_ref() } {
+                    Some(e) => {
+                        let name = unsafe {
+                            let name = (*entry).kldr_entry.BaseDllName;
+                            slice::from_raw_parts(name.Buffer, name.Length.into())
+                        };
+
+                        for (i, char) in name.iter().enumerate() {
+                            let other = unsafe { *module_name.add(i) };
+                            if *char == 0 || other == 0 {
+                                continue 'l;
+                            }
+
+                            if *char != other {
+                                continue 'l;
+                            }
+                        }
+
+                        break Some(e);
+                    }
+                    None => {
+                        break None;
+                    }
+                }
+            }
+            None => {
+                break None;
+            }
+        }
+    }
 }

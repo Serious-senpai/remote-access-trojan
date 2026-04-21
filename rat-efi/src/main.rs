@@ -12,11 +12,11 @@ use alloc::string::{String, ToString};
 use alloc::{format, vec};
 use core::slice;
 
-use log::{error, info};
+use log::{LevelFilter, error, info};
 use uefi::proto::device_path::build::DevicePathBuilder;
 use uefi::proto::device_path::build::media::FilePath;
 use uefi::proto::loaded_image::LoadedImage;
-use uefi::{CStr16, Status, boot, helpers, proto};
+use uefi::{CStr16, Status, boot, proto};
 use windows_sys::w;
 
 use crate::error::{UefiErrorMessage, UefiResultConvertable};
@@ -24,7 +24,12 @@ use crate::hooks::{bootmgfw, efi};
 use crate::utils::countdown;
 
 fn entrypoint() -> uefi::Result<(), String> {
-    helpers::init().map_err(|e| e.convert("Cannot initialize helpers"))?;
+    // Log to COM2 port
+    com_logger::builder()
+        .base(0x2f8)
+        .filter(LevelFilter::Info)
+        .setup();
+
     info!("Loading bootmgfw_old.efi...");
 
     let our_handle = boot::image_handle();

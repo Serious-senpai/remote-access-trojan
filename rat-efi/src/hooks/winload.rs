@@ -1,8 +1,9 @@
-use alloc::sync::Arc;
-use core::arch::{asm, global_asm};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::arch::global_asm;
 use core::ffi::CStr;
-use core::sync::atomic::{AtomicI64, Ordering};
-use core::{mem, slice};
+use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
+use core::{mem, ptr};
 
 use log::{error, info};
 use uefi::Status;
@@ -10,10 +11,11 @@ use windows_sys::Win32::System::Diagnostics::Debug::{
     IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_NT_HEADERS64,
 };
 use windows_sys::Win32::System::SystemServices::{IMAGE_DOS_HEADER, IMAGE_EXPORT_DIRECTORY};
+use windows_sys::w;
 
 use crate::hooks::types::_LOADER_PARAMETER_BLOCK;
 use crate::patcher::VariablePatternFinder;
-use crate::{fill_nops, utils};
+use crate::utils;
 
 type BlpArchSwitchContextFn = unsafe extern "efiapi" fn(ctx: i32) -> *mut u8;
 
@@ -36,6 +38,9 @@ static ORIGINAL_BLP_ARCH_SWITCH_CONTEXT: AtomicI64 = AtomicI64::new(0);
 static ORIGINAL_BL_IMG_ALLOCATE_IMAGE_BUFFER: AtomicI64 = AtomicI64::new(0);
 static ORIGINAL_OSL_ARCH_TRANSFER_TO_KERNEL: AtomicI64 = AtomicI64::new(0);
 static ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1: AtomicI64 = AtomicI64::new(0);
+
+static ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1_BYTES: AtomicPtr<Vec<u8>> =
+    AtomicPtr::new(ptr::null_mut());
 
 const BLP_ARCH_SWITCH_CONTEXT: &[[u8; 21]] = &[
     [
@@ -83,18 +88,36 @@ global_asm!(
     "OslArchTransferToKernelHooked_trampoline_end:",
 );
 
-const OSL_FWP_KERNEL_SETUP_PHASE1: &[[u8; 25]] = &[[
-    0x81, 0xC8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xCF, // 8 bytes before
-    0xE8, 0x23, 0xFD, 0xFE, 0xFF, // call OslFwpKernelSetupPhase1
-    0x8B, 0xF0, // mov esi, eax
-    0x85, 0xC0, // test eax, eax
-    0x79, 0x0B, // jns short loc_1800165CA (needs fix later)
-    0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, // mov r8d, 1
+const OSL_FWP_KERNEL_SETUP_PHASE1: &[[u8; 39]] = &[[
+    0xCC, // 1 byte before (int)
+    0x48, 0x89, 0x4C, 0x24, 0x08, // mov [rsp - 8 + arg_0], rcx
+    0x55, // push rbp
+    0x53, // push rbx
+    0x56, // push rsi
+    0x57, // push rdi
+    0x41, 0x54, // push r12
+    0x41, 0x55, // push r13
+    0x41, 0x56, // push r14
+    0x41, 0x57, // push r15
+    0x48, 0x8D, 0x6C, 0x24, 0xE1, // lea rbp, [rsp - 1Fh]
+    0x48, 0x81, 0xEC, 0xB8, 0x00, 0x00, 0x00, // sub rsp, 0B8h
+    0x48, 0x8B, 0xF1, // mov rsi, rcx
+    0x33, 0xFF, // xor edi, edi
+    0x48, 0x8D, 0x4D, 0x6F, // lea rcx, [rbp + 57h + arg_8]
 ]];
+
+global_asm!(
+    "OslFwpKernelSetupPhase1Hooked_trampoline:",
+    "movabs rax, 0",
+    "jmp rax",
+    "OslFwpKernelSetupPhase1Hooked_trampoline_end:",
+);
 
 unsafe extern "efiapi" {
     fn OslArchTransferToKernelHooked_trampoline();
     fn OslArchTransferToKernelHooked_trampoline_end();
+    fn OslFwpKernelSetupPhase1Hooked_trampoline();
+    fn OslFwpKernelSetupPhase1Hooked_trampoline_end();
 }
 
 unsafe extern "efiapi" fn blp_arch_switch_context(ctx: i32) -> *mut u8 {
@@ -131,55 +154,7 @@ unsafe extern "efiapi" fn osl_arch_transfer_to_kernel_hooked(
     loader_block: *mut _LOADER_PARAMETER_BLOCK,
     entrypoint: *mut u8,
 ) {
-    let cr0 = utils::read_cr0();
-    utils::write_cr0(cr0 & !0x10000);
-    // blp_arch_switch_context(0);
-    // info!("osl_arch_transfer_to_kernel_hooked called!");
-
-    // unsafe {
-    //     if let Some(ntoskrnl) = utils::find_pe_image_mut(entrypoint) {
-    //         let ntoskrnl = ntoskrnl.as_mut_ptr();
-
-    //         let dos = ntoskrnl as *mut IMAGE_DOS_HEADER;
-    //         let nt_header =
-    //             ntoskrnl.wrapping_byte_offset((*dos).e_lfanew as isize) as *mut IMAGE_NT_HEADERS64;
-
-    //         let export_dir =
-    //             (*nt_header).OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT as usize];
-    //         let exports = ntoskrnl.wrapping_byte_offset(export_dir.VirtualAddress as isize)
-    //             as *mut IMAGE_EXPORT_DIRECTORY;
-
-    //         let names =
-    //             ntoskrnl.wrapping_byte_offset((*exports).AddressOfNames as isize) as *const u32;
-    //         let ordinals = ntoskrnl.wrapping_byte_offset((*exports).AddressOfNameOrdinals as isize)
-    //             as *const u16;
-    //         let functions =
-    //             ntoskrnl.wrapping_byte_offset((*exports).AddressOfFunctions as isize) as *const u32;
-
-    //         for i in 0..(*exports).NumberOfNames {
-    //             let name =
-    //                 ntoskrnl.wrapping_byte_offset(*names.wrapping_offset(i as isize) as isize);
-    //             let name = CStr::from_ptr(name as *const i8);
-    //             if name == c"RtlRandom" || name == c"RtlRandomEx" {
-    //                 let ordinal = *ordinals.wrapping_offset(i as isize);
-    //                 let rva = *functions.wrapping_offset(ordinal as isize);
-
-    //                 let function = ntoskrnl.wrapping_byte_offset(rva as isize);
-    //                 let patch = &[
-    //                     0x48, 0x89, 0x4C, 0x24, 0x08, // mov QWORD PTR [rsp+0x8], rcx
-    //                     0x48, 0x8B, 0x44, 0x24, 0x08, // mov rax,QWORD PTR [rsp+0x8]
-    //                     0xC7, 0x00, 0x45, 0x00, 0x00, 0x00, // mov DWORD PTR [rax], 0x45
-    //                     0xB8, 0x45, 0x00, 0x00, 0x00, // mov eax, 0x45
-    //                     0xC3, // ret
-    //                 ];
-    //                 function.copy_from_nonoverlapping(patch.as_ptr(), patch.len());
-    //             }
-    //         }
-    //     }
-    // }
-
-    utils::write_cr0(cr0);
-
+    info!("osl_arch_transfer_to_kernel_hooked called!");
     let original = ORIGINAL_OSL_ARCH_TRANSFER_TO_KERNEL.load(Ordering::Acquire) as *const ();
     unsafe {
         let original_fn = mem::transmute::<*const (), OslArchTransferToKernelFn>(original);
@@ -192,14 +167,65 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
 ) -> Status {
     info!("osl_fwp_kernel_setup_phase1_hooked called!");
 
-    let original = ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1.load(Ordering::Acquire) as *const ();
-    let status = unsafe {
-        let original_fn = mem::transmute::<*const (), OslFwpKernelSetupPhase1Fn>(original);
-        original_fn(loader_block)
-    };
+    let cr0 = utils::DisableWriteProtection::new();
+    let original = ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1.load(Ordering::Acquire) as *mut u8;
+    unsafe {
+        let bytes = Box::from_raw(
+            ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1_BYTES.swap(ptr::null_mut(), Ordering::Acquire),
+        );
+        original.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
+    }
 
-    fill_nops!(64);
-    status
+    unsafe {
+        blp_arch_switch_context(0);
+        let ntoskrnl_entry =
+            utils::get_boot_loaded_module(&(*loader_block).LoadOrderListHead, w!("ntoskrnl.exe"));
+
+        if let Some(ntoskrnl_entry) = ntoskrnl_entry {
+            let ntoskrnl = ntoskrnl_entry.kldr_entry.DllBase as *mut u8;
+            let dos = ntoskrnl as *mut IMAGE_DOS_HEADER;
+            let nt_header =
+                ntoskrnl.wrapping_byte_offset((*dos).e_lfanew as isize) as *mut IMAGE_NT_HEADERS64;
+
+            let export_dir =
+                (*nt_header).OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT as usize];
+            let exports = ntoskrnl.wrapping_byte_offset(export_dir.VirtualAddress as isize)
+                as *mut IMAGE_EXPORT_DIRECTORY;
+
+            let names =
+                ntoskrnl.wrapping_byte_offset((*exports).AddressOfNames as isize) as *const u32;
+            let ordinals = ntoskrnl.wrapping_byte_offset((*exports).AddressOfNameOrdinals as isize)
+                as *const u16;
+            let functions =
+                ntoskrnl.wrapping_byte_offset((*exports).AddressOfFunctions as isize) as *const u32;
+
+            for i in 0..(*exports).NumberOfNames {
+                let name =
+                    ntoskrnl.wrapping_byte_offset(*names.wrapping_offset(i as isize) as isize);
+                let name = CStr::from_ptr(name as *const i8);
+                if name == c"RtlRandom" || name == c"RtlRandomEx" {
+                    let ordinal = *ordinals.wrapping_offset(i as isize);
+                    let rva = *functions.wrapping_offset(ordinal as isize);
+
+                    let function = ntoskrnl.wrapping_byte_offset(rva as isize);
+                    let patch = &[
+                        0x48, 0x89, 0x4C, 0x24, 0x08, // mov QWORD PTR [rsp+0x8], rcx
+                        0x48, 0x8B, 0x44, 0x24, 0x08, // mov rax,QWORD PTR [rsp+0x8]
+                        0xC7, 0x00, 0x45, 0x00, 0x00, 0x00, // mov DWORD PTR [rax], 0x45
+                        0xB8, 0x45, 0x00, 0x00, 0x00, // mov eax, 0x45
+                        0xC3, // ret
+                    ];
+                    function.copy_from_nonoverlapping(patch.as_ptr(), patch.len());
+                }
+            }
+        }
+    }
+
+    drop(cr0);
+    unsafe {
+        let original_fn = mem::transmute::<*mut u8, OslFwpKernelSetupPhase1Fn>(original);
+        original_fn(loader_block)
+    }
 }
 
 pub fn patch_winload(entrypoint: *mut u8) {
@@ -251,49 +277,45 @@ pub fn patch_winload(entrypoint: *mut u8) {
                 original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
             ORIGINAL_OSL_ARCH_TRANSFER_TO_KERNEL.store(original_call_addr, Ordering::Release);
 
-            let target_func_addr = osl_arch_transfer_to_kernel_hooked as *const u8 as i64;
             let patched = utils::get_function_code(
                 OslArchTransferToKernelHooked_trampoline,
                 OslArchTransferToKernelHooked_trampoline_end,
             );
             original[..patched.len()].copy_from_slice(patched);
+
+            let target_func_addr = osl_arch_transfer_to_kernel_hooked as *const u8 as i64;
             original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
             info!("Patched call to OslArchTransferToKernel");
         }
         None => {
-            error!("Cannot patch OslArchTransferToKernel");
+            error!("Cannot patch call to OslArchTransferToKernel");
             return;
         }
     }
 
-    // let patcher = VariablePatternPatcher::new(
-    //     OSL_FWP_KERNEL_SETUP_PHASE1,
-    //     OSL_FWP_KERNEL_SETUP_PHASE1_PATCHED,
-    //     Arc::new(|_, modify| {
-    //         let target_func_addr = osl_fwp_kernel_setup_phase1_hooked as *const u8 as i64;
-    //         modify[11..19].copy_from_slice(&target_func_addr.to_le_bytes());
-    //     }),
-    // );
-    // match patcher.patch(winload) {
-    //     Some(p) => {
-    //         let original_call_addr = winload.as_ptr().wrapping_byte_add(p.offset) as i64
-    //             + 5
-    //             + i64::from(utils::extract_call_rel32(&p.original[8..]));
-    //         ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1.store(original_call_addr, Ordering::Release);
+    match VariablePatternFinder::new(OSL_FWP_KERNEL_SETUP_PHASE1).find_mut(winload) {
+        Some(original) => {
+            let original = &mut original[1..];
+            ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1.store(original.as_ptr() as i64, Ordering::Release);
 
-    //         let mut hooked = osl_fwp_kernel_setup_phase1_hooked as *mut u8;
-    //         while unsafe { *hooked } != 0x90 {
-    //             hooked = hooked.wrapping_byte_add(1);
-    //         }
+            let patched = utils::get_function_code(
+                OslFwpKernelSetupPhase1Hooked_trampoline,
+                OslFwpKernelSetupPhase1Hooked_trampoline_end,
+            );
+            ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1_BYTES.store(
+                Box::into_raw(Box::new(original[..patched.len()].to_vec())),
+                Ordering::Release,
+            );
+            original[..patched.len()].copy_from_slice(patched);
 
-    //         let hooked = unsafe { slice::from_raw_parts_mut(hooked, p.original[13..].len()) };
-    //         hooked.copy_from_slice(&p.original[13..]);
+            let target_func_addr = osl_fwp_kernel_setup_phase1_hooked as *const u8 as i64;
+            original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
-    //         info!("Patched call to OslFwpKernelSetupPhase1");
-    //     }
-    //     None => {
-    //         error!("Cannot patch OslFwpKernelSetupPhase1");
-    //     }
-    // }
+            info!("Patched OslFwpKernelSetupPhase1: {:02X?}", &original[..32]);
+        }
+        None => {
+            error!("Cannot find OslFwpKernelSetupPhase1");
+        }
+    }
 }

@@ -113,13 +113,14 @@ pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
             // (which eventually transfers to ntoskrnl.exe). Therefore, this function (and also its
             // hooked variant) should never return, and we do not need to fix return address
             // corruption (maybe?).
-            let target_func_addr =
-                blp_arch_transfer_to64_bit_application_hooked as *const u8 as i64;
             let patched = utils::get_function_code(
                 BlpArchTransferTo64BitApplicationHooked_trampoline,
                 BlpArchTransferTo64BitApplicationHooked_trampoline_end,
             );
             original[..patched.len()].copy_from_slice(patched);
+
+            let target_func_addr =
+                blp_arch_transfer_to64_bit_application_hooked as *const u8 as i64;
             original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
             info!("Patched call to BlpArchTransferTo64BitApplication");
