@@ -5,7 +5,7 @@ use core::ffi::CStr;
 use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
 use core::{mem, ptr};
 
-use log::{error, info};
+use log::{debug, error, info, warn};
 use uefi::Status;
 use windows_sys::Win32::System::Diagnostics::Debug::{
     IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_NT_HEADERS64,
@@ -174,10 +174,14 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
             ORIGINAL_OSL_FWP_KERNEL_SETUP_PHASE1_BYTES.swap(ptr::null_mut(), Ordering::Acquire),
         );
         original.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
+
+        // Avoid releasing memory by dropping the `Box` here. `ExitBootServices()` may have been called by winload at this point, which means
+        // that memory deallocation service is no longer available.
+        Box::leak(bytes);
     }
 
     unsafe {
-        blp_arch_switch_context(0);
+        // blp_arch_switch_context(0);
         let ntoskrnl_entry =
             utils::get_boot_loaded_module(&(*loader_block).LoadOrderListHead, w!("ntoskrnl.exe"));
 
@@ -203,6 +207,8 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
                 let name =
                     ntoskrnl.wrapping_byte_offset(*names.wrapping_offset(i as isize) as isize);
                 let name = CStr::from_ptr(name as *const i8);
+                debug!("Found exported name {name:?}");
+
                 if name == c"RtlRandom" || name == c"RtlRandomEx" {
                     let ordinal = *ordinals.wrapping_offset(i as isize);
                     let rva = *functions.wrapping_offset(ordinal as isize);
@@ -216,8 +222,11 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
                         0xC3, // ret
                     ];
                     function.copy_from_nonoverlapping(patch.as_ptr(), patch.len());
+                    info!("Patched function {name:?}");
                 }
             }
+        } else {
+            warn!("Cannot find entrypoint of ntoskrnl.exe");
         }
     }
 
@@ -312,7 +321,7 @@ pub fn patch_winload(entrypoint: *mut u8) {
             let target_func_addr = osl_fwp_kernel_setup_phase1_hooked as *const u8 as i64;
             original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
 
-            info!("Patched OslFwpKernelSetupPhase1: {:02X?}", &original[..32]);
+            info!("Patched OslFwpKernelSetupPhase1");
         }
         None => {
             error!("Cannot find OslFwpKernelSetupPhase1");

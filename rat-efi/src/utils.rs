@@ -2,7 +2,7 @@ use core::arch::asm;
 use core::time::Duration;
 use core::{mem, slice};
 
-use log::info;
+use log::{debug, info, trace};
 use uefi::boot;
 use windows_sys::Win32::System::Diagnostics::Debug::IMAGE_NT_HEADERS64;
 use windows_sys::Win32::System::SystemServices::IMAGE_DOS_HEADER;
@@ -25,13 +25,7 @@ pub fn extract_call_rel32(instruction: &[u8]) -> i32 {
 }
 
 pub fn find_pattern(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
-    for index in 0..buffer.len().saturating_sub(pattern.len()) {
-        if buffer[index..index + pattern.len()] == *pattern {
-            return Some(index);
-        }
-    }
-
-    None
+    (0..buffer.len().saturating_sub(pattern.len())).find(|&index| buffer[index..index + pattern.len()] == *pattern)
 }
 
 #[macro_export]
@@ -168,7 +162,22 @@ pub unsafe fn get_boot_loaded_module<'a>(
     module_name: *const u16,
 ) -> Option<&'a _BLDR_DATA_TABLE_ENTRY> {
     let mut entry = load_order_list_head;
-    'l: loop {
+    debug!("Searching among loaded modules");
+
+    let module_name = if module_name.is_null() {
+        debug!("Module name is NULL");
+        return None;
+    } else {
+        let mut size = 0;
+        while unsafe { *module_name.add(size) } != 0 {
+            size += 1;
+        }
+
+        unsafe { slice::from_raw_parts(module_name, size) }
+    };
+
+    debug!("module_name = {module_name:02X?}");
+    loop {
         match unsafe { entry.as_ref() } {
             Some(e) => {
                 entry = e.Flink as *const _LIST_ENTRY;
@@ -176,30 +185,34 @@ pub unsafe fn get_boot_loaded_module<'a>(
                     break None;
                 }
 
+                trace!("Navigated to next module list entry {entry:p}");
                 let entry = entry
                     .wrapping_byte_sub(mem::offset_of!(_KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
                     .wrapping_byte_sub(mem::offset_of!(_BLDR_DATA_TABLE_ENTRY, kldr_entry))
                     as *const _BLDR_DATA_TABLE_ENTRY;
 
+                trace!("_BLDR_DATA_TABLE_ENTRY at {entry:p}");
                 match unsafe { entry.as_ref() } {
                     Some(e) => {
                         let name = unsafe {
                             let name = (*entry).kldr_entry.BaseDllName;
-                            slice::from_raw_parts(name.Buffer, name.Length.into())
+                            if name.Buffer.is_null() {
+                                &[]
+                            } else {
+                                slice::from_raw_parts(
+                                    name.Buffer,
+                                    usize::from(name.Length) / size_of::<u16>(),
+                                )
+                            }
                         };
 
-                        for (i, char) in name.iter().enumerate() {
-                            let other = unsafe { *module_name.add(i) };
-                            if *char == 0 || other == 0 {
-                                continue 'l;
-                            }
+                        trace!("name buffer = {name:02X?}");
+                        // trace!("Current module name = {:?}", String::from_utf16_lossy(name)); // `alloc` is not always available
 
-                            if *char != other {
-                                continue 'l;
-                            }
+                        if name == module_name {
+                            debug!("Found module with matching name");
+                            break Some(e);
                         }
-
-                        break Some(e);
                     }
                     None => {
                         break None;

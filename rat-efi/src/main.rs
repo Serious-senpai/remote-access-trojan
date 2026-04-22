@@ -20,14 +20,14 @@ use uefi::{CStr16, Status, boot, proto};
 use windows_sys::w;
 
 use crate::error::{UefiErrorMessage, UefiResultConvertable};
-use crate::hooks::{bootmgfw, efi};
+use crate::hooks::bootmgfw;
 use crate::utils::countdown;
 
 fn entrypoint() -> uefi::Result<(), String> {
     // Log to COM2 port
     com_logger::builder()
         .base(0x2f8)
-        .filter(LevelFilter::Info)
+        .filter(LevelFilter::Trace)
         .setup();
 
     info!("Loading bootmgfw_old.efi...");
@@ -71,7 +71,6 @@ fn entrypoint() -> uefi::Result<(), String> {
     .convert("Cannot load image")?;
 
     info!("Loaded bootmgfw_old.efi.");
-    efi::patch_system_table();
 
     let bootmgfw_image = boot::open_protocol_exclusive::<LoadedImage>(bootmgfw_handle)
         .convert("Cannot open protocol of bootmgfw_old.efi")?;

@@ -1,9 +1,10 @@
 [package]
-name = "utils-com-reader"
+name = "utils-pipe-server"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
+clap = { workspace = true, features = ["cargo", "derive", "error-context", "help", "usage"] }
 named_pipe = { workspace = true }
 
 [lints]

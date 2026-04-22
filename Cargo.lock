@@ -1480,9 +1480,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
-name = "utils-com-reader"
+name = "utils-pipe-server"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "named_pipe",
 ]
 

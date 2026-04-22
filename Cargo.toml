@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["rat-client", "rat-common", "rat-server", "utils-com-reader"]
+members = ["rat-client", "rat-common", "rat-server", "utils-pipe-server"]
 
 [workspace.package]
 version = "0.1.0"
