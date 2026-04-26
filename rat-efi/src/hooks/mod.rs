@@ -1,3 +1,3 @@
 pub mod bootmgfw;
-pub mod types;
+pub mod ntoskrnl;
 pub mod winload;

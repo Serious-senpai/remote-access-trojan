@@ -1,11 +1,10 @@
-use core::arch::global_asm;
 use core::mem;
 use core::sync::atomic::{AtomicI64, Ordering};
 
 use log::{error, info};
 
 use crate::hooks::winload::patch_winload;
-use crate::patcher::VariablePatternFinder;
+use crate::patcher::{VariablePatternFinder, insert_call_trampoline, return_zero_patch};
 use crate::utils;
 
 type BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
@@ -25,32 +24,11 @@ const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
     0x44, 0x8B, 0xF0, 0xE8, 0xA6, 0xBF, 0x00, 0x00, // 8 bytes after
 ]];
 
-global_asm!(
-    "BlpArchTransferTo64BitApplicationHooked_trampoline:",
-    "movabs rax, 0",
-    "call rax",
-    "BlpArchTransferTo64BitApplicationHooked_trampoline_end:",
-);
-
 const BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
     0xCC, // 1 byte before (int)
     0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, // first 8 bytes
     0x41, 0x55, 0x41, 0x56, 0x48, 0x8B, 0xEC, 0x48, // next 8 bytes
 ]];
-
-global_asm!(
-    "BmFwVerifySelfIntegrity_trampoline:",
-    "xor rax, rax",
-    "ret",
-    "BmFwVerifySelfIntegrity_trampoline_end:",
-);
-
-unsafe extern "efiapi" {
-    fn BlpArchTransferTo64BitApplicationHooked_trampoline();
-    fn BlpArchTransferTo64BitApplicationHooked_trampoline_end();
-    fn BmFwVerifySelfIntegrity_trampoline();
-    fn BmFwVerifySelfIntegrity_trampoline_end();
-}
 
 unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     entrypoint: *mut u8,
@@ -60,13 +38,18 @@ unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     flags: i32,
     descriptor_table_context: *mut u8,
 ) -> i64 {
-    patch_winload(entrypoint);
+    match unsafe { utils::find_pe_image_mut(entrypoint) } {
+        Some(winload) => patch_winload(winload),
+        None => {
+            error!("Cannot find winload.efi PE image");
+        }
+    }
 
     let original =
-        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire) as *const ();
+        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire) as *const u8;
     unsafe {
         let original_fn =
-            mem::transmute::<*const (), BlpArchTransferTo64BitApplicationFn>(original);
+            mem::transmute::<*const u8, BlpArchTransferTo64BitApplicationFn>(original);
         original_fn(
             entrypoint,
             params,
@@ -84,10 +67,7 @@ pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
     match VariablePatternFinder::new(BM_FW_VERIFY_SELF_INTEGRITY).find_mut(bootmgfw) {
         Some(original) => {
             let original = &mut original[1..];
-            let patched = utils::get_function_code(
-                BmFwVerifySelfIntegrity_trampoline,
-                BmFwVerifySelfIntegrity_trampoline_end,
-            );
+            let patched = return_zero_patch();
             original[..patched.len()].copy_from_slice(patched);
             info!("Patched BmFwVerifySelfIntegrity");
         }
@@ -97,36 +77,33 @@ pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
         }
     }
 
-    match VariablePatternFinder::new(BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw) {
-        Some(original) => {
-            let original = &mut original[8..];
-            let original_call_addr =
-                original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
-            ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION
-                .store(original_call_addr, Ordering::Release);
+    if let Some(original) =
+        VariablePatternFinder::new(BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw)
+    {
+        let original = &mut original[8..];
+        let original_call_addr =
+            original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
+        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION
+            .store(original_call_addr, Ordering::Release);
 
-            // While patching this `call` instruction, we also override some instructions after it
-            // because the original `call` only has 5 bytes but the patch to `call rax` is way
-            // longer than that. However, we do not really need to patch back the instructions at
-            // return address.
-            // Why? Ideally, BlpArchTransferTo64BitApplication transfers control to winload.efi
-            // (which eventually transfers to ntoskrnl.exe). Therefore, this function (and also its
-            // hooked variant) should never return, and we do not need to fix return address
-            // corruption (maybe?).
-            let patched = utils::get_function_code(
-                BlpArchTransferTo64BitApplicationHooked_trampoline,
-                BlpArchTransferTo64BitApplicationHooked_trampoline_end,
-            );
-            original[..patched.len()].copy_from_slice(patched);
-
-            let target_func_addr =
-                blp_arch_transfer_to64_bit_application_hooked as *const u8 as i64;
-            original[2..10].copy_from_slice(&target_func_addr.to_le_bytes());
-
+        // While patching this `call` instruction, we also override some instructions after it
+        // because the original `call` only has 5 bytes but the patch to `call rax` is way
+        // longer than that. However, we do not really need to patch back the instructions at
+        // return address.
+        // Why? Ideally, BlpArchTransferTo64BitApplication transfers control to winload.efi
+        // (which eventually transfers to ntoskrnl.exe). Therefore, this function (and also its
+        // hooked variant) should never return, and we do not need to fix return address
+        // corruption (maybe?).
+        if insert_call_trampoline(
+            original,
+            blp_arch_transfer_to64_bit_application_hooked as *const u8 as u64,
+            None,
+            None,
+        ) {
             info!("Patched call to BlpArchTransferTo64BitApplication");
-        }
-        None => {
-            error!("Cannot find BlpArchTransferTo64BitApplication");
+            return;
         }
     }
+
+    error!("Cannot find BlpArchTransferTo64BitApplication");
 }

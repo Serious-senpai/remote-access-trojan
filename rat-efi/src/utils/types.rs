@@ -1,10 +1,11 @@
+// Reference:
+// - https://github.com/memN0ps/redlotus-rs/blob/81747729dfe5e4009acf22e869b756d5d2dd7f91/bootkit/src/boot/includes.rs
+// - https://github.com/Mattiwatti/EfiGuard/blob/d1d9d858565d53f2b76249554765a7ed10e234c6/EfiGuardDxe/arc.h#L1396-L1408
+
 #![allow(clippy::all)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]
-/// Reference:
-/// - https://github.com/memN0ps/redlotus-rs/blob/81747729dfe5e4009acf22e869b756d5d2dd7f91/bootkit/src/boot/includes.rs
-/// - https://github.com/Mattiwatti/EfiGuard/blob/d1d9d858565d53f2b76249554765a7ed10e234c6/EfiGuardDxe/arc.h#L1396-L1408
 use core::ffi::c_void;
 
 // 0x10 bytes (sizeof)

@@ -14,7 +14,21 @@ uefi-raw = { version = "0.14.0", default-features = false }
 [dependencies.windows-sys]
 version = "0.61.2"
 default-features = false
-features = ["Win32", "Win32_System", "Win32_System_Diagnostics", "Win32_System_Diagnostics_Debug", "Win32_System_SystemInformation", "Win32_System_SystemServices"]
+features = [
+    "Wdk",
+        "Wdk_Foundation",
+        "Wdk_System",
+            "Wdk_System_SystemServices",
+    "Win32",
+        "Win32_Security",
+        "Win32_System",
+            "Win32_System_Diagnostics",
+                "Win32_System_Diagnostics_Debug",
+            "Win32_System_IO",
+            "Win32_System_SystemInformation",
+            "Win32_System_SystemServices",
+            "Win32_System_WindowsProgramming",
+]
 
 [profile.dev]
 debug = 2
