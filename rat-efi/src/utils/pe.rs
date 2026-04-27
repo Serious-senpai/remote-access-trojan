@@ -2,11 +2,16 @@ use core::ffi::{CStr, c_char};
 use core::{mem, ptr, slice};
 
 use windows_sys::Win32::System::Diagnostics::Debug::{
-    IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_NT_HEADERS64, IMAGE_SECTION_HEADER,
+    IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_NT_HEADERS64,
+    IMAGE_SECTION_HEADER,
 };
-use windows_sys::Win32::System::SystemServices::{IMAGE_DOS_HEADER, IMAGE_EXPORT_DIRECTORY};
+use windows_sys::Win32::System::SystemServices::{
+    IMAGE_DOS_HEADER, IMAGE_EXPORT_DIRECTORY, IMAGE_IMPORT_BY_NAME, IMAGE_IMPORT_DESCRIPTOR,
+};
+use windows_sys::Win32::System::WindowsProgramming::IMAGE_THUNK_DATA64;
 
-use crate::utils::{DOS_SIGNATURE, NT_SIGNATURE};
+pub const DOS_SIGNATURE: u16 = 0x5A4D; // "MZ"
+pub const NT_SIGNATURE: u32 = 0x4550; // "PE\0\0"
 
 pub unsafe fn get_nt_headers(image_base: *const u8) -> *const IMAGE_NT_HEADERS64 {
     let dos_header = image_base.cast::<IMAGE_DOS_HEADER>();
@@ -31,9 +36,9 @@ pub unsafe fn get_nt_headers_mut(image_base: *mut u8) -> *mut IMAGE_NT_HEADERS64
     unsafe { get_nt_headers(image_base) as *mut IMAGE_NT_HEADERS64 }
 }
 
-pub unsafe fn iterate_section_mut(
-    image: &mut [u8],
-    callback: impl Fn(IMAGE_SECTION_HEADER, &mut [u8]),
+unsafe fn iterate_sections_impl(
+    image: &[u8],
+    callback: impl Fn(IMAGE_SECTION_HEADER, *const u8, usize),
 ) {
     let nt_headers = unsafe { get_nt_headers(image.as_ptr()) };
     let nt_headers_offset = unsafe { nt_headers.cast::<u8>().offset_from(image.as_ptr()) } as usize;
@@ -64,15 +69,33 @@ pub unsafe fn iterate_section_mut(
                 let virtual_size = unsafe { section_header.Misc.VirtualSize } as usize;
 
                 if virtual_address + virtual_size <= image.len() {
-                    callback(*section_header, unsafe {
-                        slice::from_raw_parts_mut(
-                            image.as_mut_ptr().byte_add(virtual_address),
-                            virtual_size,
-                        )
-                    });
+                    callback(
+                        *section_header,
+                        unsafe { image.as_ptr().byte_add(virtual_address) },
+                        virtual_size,
+                    );
                 }
             }
         }
+    }
+}
+
+pub unsafe fn iterate_sections(image: &[u8], callback: impl Fn(IMAGE_SECTION_HEADER, &[u8])) {
+    unsafe {
+        iterate_sections_impl(image, |header, ptr, len| {
+            callback(header, slice::from_raw_parts(ptr, len))
+        });
+    }
+}
+
+pub unsafe fn iterate_sections_mut(
+    image: &mut [u8],
+    callback: impl Fn(IMAGE_SECTION_HEADER, &mut [u8]),
+) {
+    unsafe {
+        iterate_sections_impl(image, |header, ptr, len| {
+            callback(header, slice::from_raw_parts_mut(ptr as *mut u8, len))
+        });
     }
 }
 
@@ -123,6 +146,62 @@ pub unsafe fn iterate_export_address_table_mut(
                     callback(name, function);
                 }
             }
+        }
+    }
+}
+
+pub unsafe fn iterate_import_address_table_mut(
+    image: &mut [u8],
+    callback: impl Fn(&CStr, &mut u64),
+) {
+    if let Some(nt_headers) = unsafe { get_nt_headers(image.as_ptr()).as_ref() } {
+        let import_dir =
+            &nt_headers.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT as usize];
+
+        let mut imports_ptr = image[import_dir.VirtualAddress as usize..]
+            .as_ptr()
+            .cast::<IMAGE_IMPORT_DESCRIPTOR>();
+        if imports_ptr.is_null() {
+            return;
+        }
+
+        while unsafe { *imports_ptr }.Name != 0 {
+            let imports = unsafe { *imports_ptr };
+            let mut original_thunk = unsafe {
+                let rva = if imports.Anonymous.OriginalFirstThunk == 0 {
+                    imports.FirstThunk
+                } else {
+                    imports.Anonymous.OriginalFirstThunk
+                };
+
+                image[rva as usize..].as_ptr().cast::<IMAGE_THUNK_DATA64>()
+            };
+
+            if original_thunk.is_null() {
+                break;
+            }
+
+            let mut thunk = unsafe { image.as_mut_ptr().byte_add(imports.FirstThunk as usize) }
+                .cast::<IMAGE_THUNK_DATA64>();
+
+            unsafe {
+                while (*original_thunk).u1.Function != 0 {
+                    let thunk_data = image
+                        .as_ptr()
+                        .byte_add((*original_thunk).u1.AddressOfData as usize)
+                        .cast::<IMAGE_IMPORT_BY_NAME>();
+
+                    if let Some(thunk_data) = thunk_data.as_ref() {
+                        let name = CStr::from_ptr(thunk_data.Name.as_ptr());
+                        callback(name, &mut (*thunk).u1.Function)
+                    }
+
+                    thunk = thunk.add(1);
+                    original_thunk = original_thunk.add(1);
+                }
+            }
+
+            imports_ptr = unsafe { imports_ptr.add(1) };
         }
     }
 }

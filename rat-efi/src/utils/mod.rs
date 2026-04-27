@@ -11,8 +11,6 @@ use log::{debug, info, trace};
 use types::{_BLDR_DATA_TABLE_ENTRY, _KLDR_DATA_TABLE_ENTRY, _LIST_ENTRY};
 use uefi::boot;
 
-pub const DOS_SIGNATURE: u16 = 0x5A4D; // "MZ"
-pub const NT_SIGNATURE: u32 = 0x4550; // "PE\0\0"
 
 pub fn countdown(seconds: u64) {
     for i in 0..seconds {

@@ -16,6 +16,7 @@
                 "git.enabled": true,
                 "rust-analyzer.linkedProjects": [
                     "${workspaceFolder}/Cargo.toml",
+                    "${workspaceFolder}/rat-driver/Cargo.toml",
                     "${workspaceFolder}/rat-efi/Cargo.toml"
                 ],
                 "rust-analyzer.rustfmt.extraArgs": [

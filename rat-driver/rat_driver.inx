@@ -1,0 +1,117 @@
+; Example: https://github.com/microsoft/Windows-driver-samples/blob/main/filesys/miniFilter/passThrough/passThrough.inf
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
+Provider    = %ProviderString%
+PnpLockDown = 1
+
+[SourceDisksFiles]
+rat_driver.sys = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,""
+
+; Directory IDs: https://learn.microsoft.com/en-us/windows-hardware/drivers/install/using-dirids
+[DestinationDirs]
+; If a driver is in the Driver Store (13), it MUST be DCH compliant:
+; - We cannot use `DelFiles` (the OS manages the store).
+; - We cannot use Registry keys at the root of the service (HKR), they must be under Parameters.
+DriverFile = 13
+DownlevelDriverFile.CopyFiles = 12
+DownlevelDriverFile.DelFiles = 12
+
+; ================= Standard install sections =================
+
+[DefaultInstall.NT$ARCH$.10.0...25952]
+OptionDesc = %ServiceDesc%
+CopyFiles  = DriverFile
+
+[DefaultInstall.NT$ARCH$.10.0...25952.Services]
+AddService = %ServiceName%, , DefaultInstallService
+
+; ================= Support sections =================
+; Include sections refered to by the install sections above
+
+[DriverFile]
+rat_driver.sys
+
+[DefaultInstallService]
+DisplayName    = %ServiceName%
+Description    = %ServiceDesc%
+ServiceBinary  = %13%\rat_driver.sys
+Dependencies   = "FltMgr"                         ; required for minifilter
+ServiceType    = 2                                ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 3                                ; SERVICE_DEMAND_START - good for development, change to 2 to start on boot
+ErrorControl   = 1                                ; SERVICE_ERROR_NORMAL
+LoadOrderGroup = "FSFilter Activity Monitor"
+AddReg         = DefaultInstallService.AddRegistry
+
+; A pain in the ass: https://community.osr.com/t/defaultinstall-decorated-with-architecture-os-version/59725
+; In some versions of Windows 10 and older, these registry keys must be directly under HKR for minifilter to work.
+; In other versions of Windows 10 and newer, these registry keys must be nested under HKR\Parameters, and infverif
+; rejects them otherwise.
+[DefaultInstallService.AddRegistry]
+HKR, "Parameters", "SupportedFeatures", 0x00010001, 0x3
+HKR, "Parameters\Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
+HKR, "Parameters\Instances\"%InstanceName%, "Altitude", 0x00000000, %InstanceAltitude%
+HKR, "Parameters\Instances\"%InstanceName%, "Flags", 0x00010001, %InstanceFlags%
+
+; ================= Downlevel standard install sections =================
+
+[DefaultInstall.NT$ARCH$]
+OptionDesc = %ServiceDesc%
+CopyFiles  = DownlevelDriverFile.CopyFiles
+
+[DefaultInstall.NT$ARCH$.Services]
+AddService = %ServiceName%, , DownlevelDefaultInstallService
+
+; ================= Downlevel standard uninstall sections =================
+
+[DefaultUninstall.NT$ARCH$]
+LegacyUninstall = 1
+DelFiles        = DownlevelDriverFile.DelFiles
+
+[DefaultUninstall.NT$ARCH$.Services]
+DelService = %ServiceName%, 0x200 ; Ensure service is stopped before deleting
+
+; ================= Downlevel support sections =================
+
+[DownlevelDriverFile.CopyFiles]
+rat_driver.sys
+
+[DownlevelDriverFile.DelFiles]
+rat_driver.sys
+
+[DownlevelDefaultInstallService]
+DisplayName    = %ServiceName%
+Description    = %ServiceDesc%
+ServiceBinary  = %12%\rat_driver.sys
+Dependencies   = "FltMgr"                         ; required for minifilter
+ServiceType    = 2                                ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 3                                ; SERVICE_DEMAND_START - good for development, change to 2 to start on boot
+ErrorControl   = 1                                ; SERVICE_ERROR_NORMAL
+LoadOrderGroup = "FSFilter Activity Monitor"
+AddReg         = DownlevelDefaultInstallService.AddRegistry
+
+; Only in here do we not use the "Parameters" subkey (this is also the reason why we need a separate downlevel install
+; section I guess?)
+[DownlevelDefaultInstallService.AddRegistry]
+HKR, , "SupportedFeatures", 0x00010001, 0x3
+HKR, "Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
+HKR, "Instances\"%InstanceName%, "Altitude", 0x00000000, %InstanceAltitude%
+HKR, "Instances\"%InstanceName%, "Flags", 0x00010001, %InstanceFlags%
+
+; ================= Strings =================
+
+[Strings]
+ProviderString         = "TODO-Set-Provider"
+ServiceDesc            = "RAT Driver Service"
+ServiceName            = "RAT Driver"
+DriverName             = "RAT Driver"
+DiskId1                = "RAT Driver Installation Disk #1"
+
+DefaultInstance        = "RAT Driver Instance"
+InstanceName           = "RAT Driver Instance"
+InstanceAltitude       = "360000"
+InstanceFlags          = 0x0

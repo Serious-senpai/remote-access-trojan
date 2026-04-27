@@ -1,0 +1,67 @@
+[package]
+name = "rat-driver"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[package.metadata.wdk.driver-model]
+driver-type = "WDM"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wdk = { version = "0.4.1", default-features = false, features = ["alloc"] }
+wdk-alloc = { version = "0.4.1", default-features = false }
+wdk-panic = { version = "0.4.1", default-features = false }
+wdk-sys = { version = "0.5.1", default-features = false }
+widestring = { version = "1.2.1", default-features = false }
+
+[build-dependencies]
+wdk-build = { version = "0.5.1", default-features = false }
+
+[profile.dev]
+debug = 2
+lto = "off"
+opt-level = 0
+overflow-checks = true
+panic = "abort"
+strip = false
+
+[profile.release]
+codegen-units = 1
+debug = 0
+lto = "fat"
+opt-level = 3
+overflow-checks = false
+panic = "abort"
+strip = true
+
+[lints.clippy]
+absolute_paths = "warn"
+assigning_clones = "warn"
+bool_to_int_with_if = "warn"
+branches_sharing_code = "warn"
+cast_lossless = "warn"
+cloned_instead_of_copied = "warn"
+collection_is_never_read = "warn"
+elidable_lifetime_names = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+if_not_else = "warn"
+implicit_clone = "warn"
+inconsistent_struct_constructor = "warn"
+inefficient_to_string = "warn"
+manual_instant_elapsed = "warn"
+manual_string_new = "warn"
+map_unwrap_or = "warn"
+match_bool = "warn"
+match_same_arms = "warn"
+needless_collect = "warn"
+needless_continue = "warn"
+suboptimal_flops = "warn"
+too_many_arguments = "allow"
+trait_duplication_in_bounds = "warn"
+use_self = "warn"
+wildcard_imports = "warn"
