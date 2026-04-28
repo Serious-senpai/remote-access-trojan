@@ -1,6 +1,7 @@
-/// Note that winload.efi operates in 2 contexts: firmware and kernel. In firmware context, physical addresses are used.
-/// In kernel context, virtual addresses are used. After transitioning to ntoskrnl.exe, physical addresses are no longer
-/// valid.
+// Note that winload.efi operates in 2 contexts: firmware and kernel. In firmware context, physical addresses are used.
+// In kernel context, virtual addresses are used. After transitioning to ntoskrnl.exe, physical addresses are no longer
+// valid.
+
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
