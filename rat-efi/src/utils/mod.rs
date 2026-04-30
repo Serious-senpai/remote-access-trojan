@@ -11,7 +11,6 @@ use log::{debug, info, trace};
 use types::{_BLDR_DATA_TABLE_ENTRY, _KLDR_DATA_TABLE_ENTRY, _LIST_ENTRY};
 use uefi::boot;
 
-
 pub fn countdown(seconds: u64) {
     for i in 0..seconds {
         info!("Counting down {} seconds...", seconds - i);
@@ -167,12 +166,11 @@ pub unsafe fn get_boot_loaded_module<'a>(
                         }
 
                         cname.last_mut().map(|c| *c = 0);
-                        let cname = unsafe { CStr::from_bytes_with_nul_unchecked(&cname) }
-                            .to_string_lossy();
-                        trace!("Module name = {cname}");
+                        let cname = CStr::from_bytes_until_nul(&cname);
+                        trace!("Module name = {cname:?}");
 
                         if name == module_name {
-                            debug!("Found module with matching name ({cname})");
+                            debug!("Found module with matching name ({cname:?})");
                             break Some(e);
                         }
                     }
