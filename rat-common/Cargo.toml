@@ -4,15 +4,19 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
-async-trait = { workspace = true }
-log = { workspace = true }
-poem-openapi = { workspace = true }
-serde = { workspace = true, features = ["derive", "rc", "std"] }
-serde_json = { workspace = true }
-simplelog = { workspace = true, features = ["local-offset", "termcolor"] }
-slotmap = { workspace = true }
-tokio = { workspace = true }
+anyhow = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+poem-openapi = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive", "rc", "std"] }
+serde_json = { workspace = true, optional = true }
+simplelog = { workspace = true, optional = true, features = ["local-offset", "termcolor"] }
+slotmap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[features]
+default = ["std"]
+std = ["dep:anyhow", "dep:async-trait", "dep:log", "dep:poem-openapi", "dep:serde", "dep:serde_json", "dep:simplelog", "dep:slotmap", "dep:tokio"]

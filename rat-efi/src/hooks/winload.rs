@@ -162,9 +162,9 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
         Box::leak(bytes);
     }
 
-    let ntoskrnl_node = unsafe {
-        utils::get_boot_loaded_module(&(*loader_block).LoadOrderListHead, w!("ntoskrnl.exe"))
-    };
+    let load_order_list_head = unsafe { &(*loader_block).LoadOrderListHead };
+    let ntoskrnl_node =
+        unsafe { utils::get_boot_loaded_module(load_order_list_head, w!("ntoskrnl.exe")) };
 
     if let Some(ntoskrnl_entry) = ntoskrnl_node {
         let ntoskrnl = unsafe {
@@ -182,7 +182,7 @@ unsafe extern "efiapi" fn osl_fwp_kernel_setup_phase1_hooked(
             unsafe { slice::from_raw_parts_mut(buffer, ALLOCATED_IMAGE_BUFFER_SIZE as usize) }
         };
 
-        patch_ntoskrnl(ntoskrnl, buffer);
+        patch_ntoskrnl(ntoskrnl, buffer, load_order_list_head);
     } else {
         warn!("Cannot find base DLL address of ntoskrnl.exe");
     }
