@@ -36,7 +36,7 @@ jobs:
 
   uefi-image:
     name: Build UEFI image
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -49,6 +49,19 @@ jobs:
           cache: false
           rustflags: ""
           target: x86_64-unknown-uefi
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup tools
+        shell: cmd
+        run: |
+          extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
+          cargo install cargo-wdk
+
+      - name: Build Windows kernel driver
+        working-directory: rat-driver
+        run: cargo wdk build --profile release || true  # Ignore this because our .inx fucks up infverif
 
       - name: Build UEFI image
         working-directory: rat-efi

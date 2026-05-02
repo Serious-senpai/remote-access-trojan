@@ -31,7 +31,7 @@ jobs:
 
   clippy:
     name: Run clippy
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -46,8 +46,23 @@ jobs:
           rustflags: ""
           target: x86_64-unknown-uefi
 
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup tools
+        shell: cmd
+        run: |
+          extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
+          cargo install cargo-wdk
+
       - name: Run clippy
         run: cargo clippy --all-features --no-deps -- -D warnings
+
+      - name: Run clippy (kernel driver)
+        working-directory: rat-driver
+        run: |
+          cargo wdk build || true
+          cargo clippy --all-features --no-deps -- -D warnings
 
       - name: Run clippy (UEFI)
         working-directory: rat-efi

@@ -189,11 +189,11 @@ pub unsafe fn manual_map(
 
                 // Process relocations
                 let delta =
-                    new_image.as_ptr() as i128 - nt_headers.OptionalHeader.ImageBase as i128;
+                    new_image.as_ptr() as i128 - i128::from(nt_headers.OptionalHeader.ImageBase);
                 debug!(
                     "delta = {:p} - 0x{:x} = 0x{delta:X} ({delta})",
                     new_image.as_ptr(),
-                    nt_headers.OptionalHeader.ImageBase as i128,
+                    i128::from(nt_headers.OptionalHeader.ImageBase),
                 );
                 process_relocation(new_image, delta);
 

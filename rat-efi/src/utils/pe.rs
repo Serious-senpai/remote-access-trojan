@@ -17,19 +17,17 @@ pub const NT_SIGNATURE: u32 = 0x4550; // "PE\0\0"
 
 pub unsafe fn get_nt_headers(image_base: *const u8) -> *const IMAGE_NT_HEADERS64 {
     let dos_header = image_base.cast::<IMAGE_DOS_HEADER>();
-    if let Some(dos) = unsafe { dos_header.as_ref() } {
-        if dos.e_magic == DOS_SIGNATURE {
+    if let Some(dos) = unsafe { dos_header.as_ref() }
+        && dos.e_magic == DOS_SIGNATURE {
             let nt_headers_offset = dos.e_lfanew as usize;
             let nt_headers_ptr =
                 unsafe { image_base.byte_add(nt_headers_offset) }.cast::<IMAGE_NT_HEADERS64>();
 
-            if let Some(nt_headers) = unsafe { nt_headers_ptr.as_ref() } {
-                if nt_headers.Signature == NT_SIGNATURE {
+            if let Some(nt_headers) = unsafe { nt_headers_ptr.as_ref() }
+                && nt_headers.Signature == NT_SIGNATURE {
                     return nt_headers_ptr;
                 }
-            }
         }
-    }
 
     ptr::null_mut()
 }
@@ -157,7 +155,7 @@ unsafe fn iterate_export_address_table_impl(image: &[u8], mut callback: impl FnM
                 let name = image[names[i] as usize..].as_ptr().cast::<c_char>();
                 let name = unsafe { CStr::from_ptr(name) };
 
-                let rva = functions[ordinals[i as usize] as usize];
+                let rva = functions[ordinals[i] as usize];
                 callback(name, rva);
             }
         }
@@ -216,8 +214,8 @@ pub unsafe fn iterate_import_address_table_mut(
         while unsafe { *import_dir }.Name != 0 {
             let imports = &unsafe { *import_dir };
             let rva = imports.Name as usize;
-            if rva < image.len() {
-                if let Ok(module_name) = CStr::from_bytes_until_nul(&image[rva..]) {
+            if rva < image.len()
+                && let Ok(module_name) = CStr::from_bytes_until_nul(&image[rva..]) {
                     let try_original_first_thunk =
                         unsafe { imports.Anonymous.OriginalFirstThunk } as usize;
                     let mut original_first_thunk = if try_original_first_thunk == 0 {
@@ -253,7 +251,6 @@ pub unsafe fn iterate_import_address_table_mut(
                         }
                     }
                 }
-            }
 
             import_dir = unsafe { import_dir.add(1) };
         }

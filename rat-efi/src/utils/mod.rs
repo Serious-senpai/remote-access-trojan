@@ -31,7 +31,7 @@ pub fn find_pattern(buffer: &[u8], pattern: &[u8]) -> Option<usize> {
         .find(|&index| buffer[index..index + pattern.len()] == *pattern)
 }
 
-unsafe fn find_pe_image_impl<'a>(mut code: *const u8) -> Option<(*const u8, usize)> {
+unsafe fn find_pe_image_impl(mut code: *const u8) -> Option<(*const u8, usize)> {
     loop {
         if code.is_null() {
             break None;
@@ -165,7 +165,9 @@ pub unsafe fn get_boot_loaded_module<'a>(
                             cname[i] = c as u8;
                         }
 
-                        cname.last_mut().map(|c| *c = 0);
+                        if let Some(c) = cname.last_mut() {
+                            *c = 0;
+                        }
                         let cname = CStr::from_bytes_until_nul(&cname);
                         trace!("Module name = {cname:?}");
 

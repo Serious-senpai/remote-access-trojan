@@ -20,6 +20,8 @@ static GLOBAL_ALLOCATOR: WdkAllocator = WdkAllocator;
 type DriverEntryFn =
     unsafe extern "system" fn(driver: PDRIVER_OBJECT, registry_path: PCUNICODE_STRING) -> NTSTATUS;
 
+/// # Safety
+/// This function is called by ntoskrnl during `KiSystemStartup`, following Windows x64 calling convention.
 #[unsafe(export_name = "DriverEntry")]
 pub unsafe extern "system" fn driver_entry(
     driver: PDRIVER_OBJECT,
@@ -72,6 +74,7 @@ pub unsafe extern "system" fn driver_entry(
     };
 
     // Invoke our post-hook logic
+    info!("Original DriverEntry returned with status: 0x{status:X}");
 
     status
 }
