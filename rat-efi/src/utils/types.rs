@@ -3,6 +3,7 @@
 // - https://github.com/Mattiwatti/EfiGuard/blob/d1d9d858565d53f2b76249554765a7ed10e234c6/EfiGuardDxe/arc.h#L1396-L1408
 
 #![allow(clippy::all)]
+#![allow(clippy::use_self)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]

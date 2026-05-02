@@ -18,16 +18,18 @@ pub const NT_SIGNATURE: u32 = 0x4550; // "PE\0\0"
 pub unsafe fn get_nt_headers(image_base: *const u8) -> *const IMAGE_NT_HEADERS64 {
     let dos_header = image_base.cast::<IMAGE_DOS_HEADER>();
     if let Some(dos) = unsafe { dos_header.as_ref() }
-        && dos.e_magic == DOS_SIGNATURE {
-            let nt_headers_offset = dos.e_lfanew as usize;
-            let nt_headers_ptr =
-                unsafe { image_base.byte_add(nt_headers_offset) }.cast::<IMAGE_NT_HEADERS64>();
+        && dos.e_magic == DOS_SIGNATURE
+    {
+        let nt_headers_offset = dos.e_lfanew as usize;
+        let nt_headers_ptr =
+            unsafe { image_base.byte_add(nt_headers_offset) }.cast::<IMAGE_NT_HEADERS64>();
 
-            if let Some(nt_headers) = unsafe { nt_headers_ptr.as_ref() }
-                && nt_headers.Signature == NT_SIGNATURE {
-                    return nt_headers_ptr;
-                }
+        if let Some(nt_headers) = unsafe { nt_headers_ptr.as_ref() }
+            && nt_headers.Signature == NT_SIGNATURE
+        {
+            return nt_headers_ptr;
         }
+    }
 
     ptr::null_mut()
 }
@@ -215,42 +217,43 @@ pub unsafe fn iterate_import_address_table_mut(
             let imports = &unsafe { *import_dir };
             let rva = imports.Name as usize;
             if rva < image.len()
-                && let Ok(module_name) = CStr::from_bytes_until_nul(&image[rva..]) {
-                    let try_original_first_thunk =
-                        unsafe { imports.Anonymous.OriginalFirstThunk } as usize;
-                    let mut original_first_thunk = if try_original_first_thunk == 0 {
-                        image[imports.FirstThunk as usize..].as_ptr()
-                    } else {
-                        image[try_original_first_thunk..].as_ptr()
-                    }
+                && let Ok(module_name) = CStr::from_bytes_until_nul(&image[rva..])
+            {
+                let try_original_first_thunk =
+                    unsafe { imports.Anonymous.OriginalFirstThunk } as usize;
+                let mut original_first_thunk = if try_original_first_thunk == 0 {
+                    image[imports.FirstThunk as usize..].as_ptr()
+                } else {
+                    image[try_original_first_thunk..].as_ptr()
+                }
+                .cast::<IMAGE_THUNK_DATA64>();
+
+                let mut first_thunk = image[imports.FirstThunk as usize..]
+                    .as_ptr()
                     .cast::<IMAGE_THUNK_DATA64>();
 
-                    let mut first_thunk = image[imports.FirstThunk as usize..]
-                        .as_ptr()
-                        .cast::<IMAGE_THUNK_DATA64>();
+                unsafe {
+                    while (*original_first_thunk).u1.AddressOfData != 0 {
+                        if (*original_first_thunk).u1.Ordinal & IMAGE_ORDINAL_FLAG64 == 0 {
+                            let function = &*image
+                                [(*original_first_thunk).u1.AddressOfData as usize..]
+                                .as_ptr()
+                                .cast::<IMAGE_IMPORT_BY_NAME>();
+                            let function_name = CStr::from_ptr(function.Name.as_ptr());
 
-                    unsafe {
-                        while (*original_first_thunk).u1.AddressOfData != 0 {
-                            if (*original_first_thunk).u1.Ordinal & IMAGE_ORDINAL_FLAG64 == 0 {
-                                let function = &*image
-                                    [(*original_first_thunk).u1.AddressOfData as usize..]
-                                    .as_ptr()
-                                    .cast::<IMAGE_IMPORT_BY_NAME>();
-                                let function_name = CStr::from_ptr(function.Name.as_ptr());
-
-                                let first_thunk_mut = first_thunk as *mut IMAGE_THUNK_DATA64;
-                                callback(
-                                    module_name,
-                                    function_name,
-                                    &mut (*first_thunk_mut).u1.Function,
-                                );
-                            }
-
-                            original_first_thunk = original_first_thunk.add(1);
-                            first_thunk = first_thunk.add(1);
+                            let first_thunk_mut = first_thunk as *mut IMAGE_THUNK_DATA64;
+                            callback(
+                                module_name,
+                                function_name,
+                                &mut (*first_thunk_mut).u1.Function,
+                            );
                         }
+
+                        original_first_thunk = original_first_thunk.add(1);
+                        first_thunk = first_thunk.add(1);
                     }
                 }
+            }
 
             import_dir = unsafe { import_dir.add(1) };
         }
