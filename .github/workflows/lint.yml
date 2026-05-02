@@ -25,6 +25,10 @@ jobs:
       - name: Run rustfmt via cargo fmt
         run: cargo +nightly fmt -- --check
 
+      - name: Run rustfmt via cargo fmt (kernel driver)
+        working-directory: rat-driver
+        run: cargo +nightly fmt -- --check
+
       - name: Run rustfmt via cargo fmt (UEFI)
         working-directory: rat-efi
         run: cargo +nightly fmt -- --check
