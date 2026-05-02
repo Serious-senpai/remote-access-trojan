@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::fmt::{self, Display};
-use std::iter;
+use std::fmt::Display;
 use std::num::ParseIntError;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fmt, iter};
 
 use poem_openapi::registry::{MetaSchema, MetaSchemaRef};
 use poem_openapi::types::{ParseError, ParseFromJSON, ParseResult, ToJSON, Type};

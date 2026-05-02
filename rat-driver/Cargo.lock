@@ -448,6 +448,7 @@ version = "0.1.0"
 name = "rat-driver"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "com_logger",
  "log",
  "rat-common",
