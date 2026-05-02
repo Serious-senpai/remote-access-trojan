@@ -11,18 +11,6 @@ use windows_sys::Win32::System::SystemServices::{
 use crate::utils::types::_LIST_ENTRY;
 use crate::utils::{self, pe};
 
-fn cstr_eq_ignore_ascii_case(a: &CStr, b: &[u8]) -> bool {
-    let bytes = a.to_bytes();
-    if bytes.len() != b.len() {
-        return false;
-    }
-
-    bytes
-        .iter()
-        .zip(b.iter())
-        .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
-}
-
 unsafe fn resolve_export_address(module: &[u8], name: &CStr) -> Option<u64> {
     let mut resolved = None;
 
@@ -37,7 +25,7 @@ unsafe fn resolve_export_address(module: &[u8], name: &CStr) -> Option<u64> {
     resolved
 }
 
-unsafe fn process_relocation(new_image: &mut [u8], delta: i128) -> bool {
+pub unsafe fn process_relocation(new_image: &mut [u8], delta: i128) -> bool {
     match unsafe { pe::get_nt_headers(new_image.as_ptr()).as_ref() } {
         Some(nt_headers) => {
             if delta != 0 {
@@ -79,10 +67,6 @@ unsafe fn process_relocation(new_image: &mut [u8], delta: i128) -> bool {
                                 / mem::size_of::<u16>(),
                         )
                     };
-                    debug!(
-                        "Relocation block: VirtualAddress=0x{base_rva:X}, SizeOfBlock=0x{block_size:X} ({} entries)",
-                        entries.len(),
-                    );
 
                     fn bound_check_and_process<T>(
                         image: *mut T,
@@ -96,7 +80,7 @@ unsafe fn process_relocation(new_image: &mut [u8], delta: i128) -> bool {
                         }
                     }
 
-                    for (index, &entry) in entries.iter().enumerate() {
+                    for &entry in entries {
                         if entry == 0 {
                             break;
                         }
@@ -104,11 +88,6 @@ unsafe fn process_relocation(new_image: &mut [u8], delta: i128) -> bool {
                         let offset = usize::from(entry) & 0xFFF;
                         let rva = base_rva.saturating_add(offset);
                         let reloc_type = entry >> 12;
-                        debug!(
-                            "Relocation entry #{}/{}: 0x{entry:X} (type=0x{reloc_type:X}, offset=0x{offset:X} -> rva=0x{rva:X})",
-                            index + 1,
-                            entries.len()
-                        );
 
                         match u32::from(reloc_type) {
                             IMAGE_REL_BASED_HIGHLOW => {
@@ -219,10 +198,10 @@ pub unsafe fn manual_map(
                 process_relocation(new_image, delta);
 
                 // Resolve imports from ntoskrnl using its export table.
-                pe::iterate_import_address_table_mut(new_image, |module, name, thunk| {
-                    if let Ok(module) = module.to_str() {
+                pe::iterate_import_address_table_mut(new_image, |module_name, name, thunk| {
+                    if let Ok(module_name) = module_name.to_str() {
                         let mut buffer = [0; 64];
-                        for (i, c) in module.encode_utf16().enumerate() {
+                        for (i, c) in module_name.encode_utf16().enumerate() {
                             if i + 1 == buffer.len() {
                                 break;
                             }
@@ -239,7 +218,7 @@ pub unsafe fn manual_map(
                             );
                             if let Some(address) = resolve_export_address(module, name) {
                                 *thunk = address;
-                                debug!("Resolved {module:?}!{name:?} to 0x{address:X}");
+                                debug!("Resolved {module_name:?}!{name:?} to 0x{address:X}");
                             }
                         }
                     }

@@ -12,6 +12,8 @@ driver-type = "WDM"
 crate-type = ["cdylib"]
 
 [dependencies]
+com_logger = { version = "0.1.2", default-features = false }
+log = { version = "0.4.29", default-features = false }
 rat-common = { path = "../rat-common", default-features = false }
 wdk = { version = "0.4.1", default-features = false, features = ["alloc"] }
 wdk-alloc = { version = "0.4.1", default-features = false }

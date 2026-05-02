@@ -4,11 +4,12 @@ extern crate alloc;
 extern crate wdk_panic;
 
 mod driver;
-mod log;
+mod logger;
 mod string;
 
 use core::mem;
 
+use log::{LevelFilter, info};
 use rat_common::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
 use wdk_sys::{NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER};
@@ -25,6 +26,14 @@ pub unsafe extern "system" fn driver_entry(
     registry_path: PCUNICODE_STRING,
     extra: *const KernelHandoff,
 ) -> NTSTATUS {
+    // Log to COM2 port
+    com_logger::builder()
+        .base(0x2f8)
+        .filter(LevelFilter::Trace)
+        .setup();
+
+    info!("Running hooked DriverEntry...");
+
     if extra.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
