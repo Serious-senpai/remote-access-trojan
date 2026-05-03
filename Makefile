@@ -17,8 +17,8 @@ build-release:
 	cd $(ROOT)/rat-frontend && npm run build
 
 lint:
-	cd $(ROOT) && cargo +nightly fmt && cargo clippy
-	cd $(ROOT)/rat-efi && cargo +nightly fmt && cargo clippy
+	cd $(ROOT) && cargo +nightly-2026-05-01 fmt && cargo clippy
+	cd $(ROOT)/rat-efi && cargo +nightly-2026-05-01 fmt && cargo clippy
 
 run-efi:
 	cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/OVMF_VARS.fd

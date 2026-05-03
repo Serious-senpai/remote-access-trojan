@@ -951,6 +951,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rat-dropper"
+version = "0.1.0"
+dependencies = [
+ "rat-common",
+ "windows-sys",
+]
+
+[[package]]
 name = "rat-server"
 version = "0.1.0"
 dependencies = [

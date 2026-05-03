@@ -11,3 +11,4 @@ pub mod reader;
 pub mod schema;
 #[cfg(feature = "std")]
 pub mod snowflake;
+pub mod utils;

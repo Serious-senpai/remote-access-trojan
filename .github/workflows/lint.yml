@@ -22,15 +22,15 @@ jobs:
           rustflags: ""
           target: x86_64-unknown-uefi
 
-      - name: Run rustfmt via cargo fmt
-        run: cargo +nightly-2026-05-01 fmt -- --check
-
-      - name: Run rustfmt via cargo fmt (kernel driver)
+      - name: Run rustfmt via cargo fmt (rat-driver)
         working-directory: rat-driver
         run: cargo +nightly-2026-05-01 fmt -- --check
 
-      - name: Run rustfmt via cargo fmt (UEFI)
+      - name: Run rustfmt via cargo fmt (rat-efi)
         working-directory: rat-efi
+        run: cargo +nightly-2026-05-01 fmt -- --check
+
+      - name: Run rustfmt via cargo fmt
         run: cargo +nightly-2026-05-01 fmt -- --check
 
   clippy:
@@ -59,15 +59,17 @@ jobs:
           extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
           cargo install cargo-wdk
 
-      - name: Run clippy
-        run: cargo clippy --all-features --no-deps -- -D warnings
-
-      - name: Run clippy (kernel driver)
+      - name: Run clippy (rat-driver)
         working-directory: rat-driver
         run: |
           cargo wdk build || true
           cargo clippy --all-features --no-deps -- -D warnings
 
-      - name: Run clippy (UEFI)
+      - name: Run clippy (rat-efi)
         working-directory: rat-efi
+        run: |
+          cargo build
+          cargo clippy --all-features --no-deps -- -D warnings
+
+      - name: Run clippy
         run: cargo clippy --all-features --no-deps -- -D warnings

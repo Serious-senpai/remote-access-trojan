@@ -21,35 +21,6 @@ jobs:
           cache: false
           rustflags: ""
 
-      - name: Build Windows executables
-        run: |
-          cargo build --release -p rat-client
-          cargo build --release -p rat-server
-
-      - name: Upload Windows executables
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows
-          path: |
-            target/release/rat-client.exe
-            target/release/rat-server.exe
-
-  uefi-image:
-    name: Build UEFI image
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: 1.94
-          cache: false
-          rustflags: ""
-          target: x86_64-unknown-uefi
-
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
 
@@ -67,11 +38,17 @@ jobs:
         working-directory: rat-efi
         run: cargo build --release
 
-      - name: Upload UEFI image
+      - name: Build Windows executables
+        run: cargo build --release
+
+      - name: Upload Windows executables
         uses: actions/upload-artifact@v7
         with:
-          name: uefi-image
-          path: rat-efi/target/x86_64-unknown-uefi/release/rat-efi.efi
+          name: windows
+          path: |
+            target/release/rat-client.exe
+            target/release/rat-dropper.exe
+            target/release/rat-server.exe
 
   docker:
     name: Build Docker images
@@ -84,13 +61,19 @@ jobs:
       - name: Build Docker images
         run: docker compose build
 
-      - name: Extract Linux executable
+      - name: Extract Linux executables
         run: |
           mkdir -p build
+
           docker create --name temp rat-alpine-client
           docker cp temp:/rat-client build/rat-client
           docker rm temp
           ldd build/rat-client
+
+          docker create --name temp rat-server
+          docker cp temp:/rat-server build/rat-server
+          docker rm temp
+          ldd build/rat-server
 
       - name: Save Docker images
         run: |
@@ -106,7 +89,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linux
-          path: build/rat-client
+          path: |
+            build/rat-client
+            build/rat-server
 
       - name: Upload Docker images
         uses: actions/upload-artifact@v7

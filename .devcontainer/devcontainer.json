@@ -20,7 +20,7 @@
                     "${workspaceFolder}/rat-efi/Cargo.toml"
                 ],
                 "rust-analyzer.rustfmt.extraArgs": [
-                    "+nightly"
+                    "+nightly-2026-05-01"
                 ]
             }
         }
