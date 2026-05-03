@@ -4,8 +4,10 @@ extern crate alloc;
 extern crate wdk_panic;
 
 mod driver;
+mod global;
 mod logger;
 mod string;
+mod wrappers;
 
 use core::ffi::c_void;
 use core::{mem, ptr};

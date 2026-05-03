@@ -20,7 +20,7 @@ wdk = { version = "0.4.1", default-features = false, features = ["alloc"] }
 wdk-alloc = { version = "0.4.1", default-features = false }
 wdk-panic = { version = "0.4.1", default-features = false }
 wdk-sys = { version = "0.5.1", default-features = false }
-widestring = { version = "1.2.1", default-features = false }
+widestring = { version = "1.2.1", default-features = false, features = ["alloc"] }
 
 [build-dependencies]
 wdk-build = { version = "0.5.1", default-features = false }

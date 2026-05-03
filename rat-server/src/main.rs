@@ -39,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
 
     let server_c = server.clone();
     tokio::spawn(async move {
+        info!("Registered Ctrl-C handler.");
         let _ = signal::ctrl_c().await;
         info!("Received Ctrl-C signal.");
         server_c.stop();

