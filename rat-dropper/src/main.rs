@@ -191,12 +191,11 @@ fn mount_esp_and_setup_persistence() -> bool {
             let bootmgfw_old = bootdir.join("bootmgfw_old.efi");
             let bootmgfw = bootdir.join("bootmgfw.efi");
 
-            if !bootmgfw_old.exists() {
-                if let Err(e) = fs::copy(&bootmgfw, &bootmgfw_old) {
+            if !bootmgfw_old.exists()
+                && let Err(e) = fs::copy(&bootmgfw, &bootmgfw_old) {
                     eprintln!("Failed to backup original bootmgfw.efi: {e}");
                     return false;
                 }
-            }
 
             match fs::File::create(&bootmgfw) {
                 Ok(mut f) => {
