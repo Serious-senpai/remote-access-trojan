@@ -1,9 +1,7 @@
 use core::ffi::c_void;
 use core::ptr;
-
 use log::info;
-use wdk;
-use wdk::nt_success;
+use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{KeDelayExecutionThread, PsCreateSystemThread};
 use wdk_sys::{DRIVER_OBJECT, LARGE_INTEGER, NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};

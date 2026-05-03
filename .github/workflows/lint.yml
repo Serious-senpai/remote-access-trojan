@@ -16,22 +16,22 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly,1.94
+          toolchain: nightly-2026-05-01,1.94
           components: clippy,rustfmt
           cache: false
           rustflags: ""
           target: x86_64-unknown-uefi
 
       - name: Run rustfmt via cargo fmt
-        run: cargo +nightly fmt -- --check
+        run: cargo +nightly-2026-05-01 fmt -- --check
 
       - name: Run rustfmt via cargo fmt (kernel driver)
         working-directory: rat-driver
-        run: cargo +nightly fmt -- --check
+        run: cargo +nightly-2026-05-01 fmt -- --check
 
       - name: Run rustfmt via cargo fmt (UEFI)
         working-directory: rat-efi
-        run: cargo +nightly fmt -- --check
+        run: cargo +nightly-2026-05-01 fmt -- --check
 
   clippy:
     name: Run clippy
@@ -44,7 +44,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly,1.94
+          toolchain: nightly-2026-05-01,1.94
           components: clippy,rustfmt
           cache: false
           rustflags: ""
