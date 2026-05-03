@@ -20,7 +20,6 @@ jobs:
           components: clippy,rustfmt
           cache: false
           rustflags: ""
-          target: x86_64-unknown-uefi
 
       - name: Run rustfmt via cargo fmt (rat-driver)
         working-directory: rat-driver

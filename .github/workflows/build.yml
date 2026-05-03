@@ -20,6 +20,7 @@ jobs:
           toolchain: 1.94
           cache: false
           rustflags: ""
+          target: x86_64-unknown-uefi
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -85,7 +86,7 @@ jobs:
           docker save -o build/ubuntu-client.tar rat-ubuntu-client
           docker save -o build/server.tar rat-server
 
-      - name: Upload Linux executable
+      - name: Upload Linux executables
         uses: actions/upload-artifact@v7
         with:
           name: linux
