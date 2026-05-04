@@ -5,6 +5,7 @@ extern crate wdk_panic;
 
 mod driver;
 mod global;
+mod handlers;
 mod logger;
 mod string;
 mod wrappers;

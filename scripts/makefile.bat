@@ -5,16 +5,18 @@ cd /d %root%
 
 echo Found repository root: %root%
 
+set profile=%~1
+if "%profile%"=="" set profile=release
+echo Building with profile "%profile%"
+
 cd /d %root%
-cargo build -p rat-client --release
+cargo build -p rat-client --profile %profile%
 
 cd /d %root%\rat-driver
-cargo wdk build --profile release
+cargo wdk build --profile %profile%
 
 cd /d %root%\rat-efi
-cargo build --release
+cargo build --profile %profile%
 
 cd /d %root%
-cargo build --release
-
-echo Dropper at %root%\target\release\rat-dropper.exe
+cargo build --profile %profile%

