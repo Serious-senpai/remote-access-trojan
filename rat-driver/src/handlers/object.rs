@@ -17,7 +17,7 @@ use wdk_sys::{
 };
 use widestring::u16cstr;
 
-use crate::log;
+use crate::trace;
 
 pub fn ob_register_callbacks() -> anyhow::Result<()> {
     let mut altitude = UNICODE_STRING::default();
@@ -83,7 +83,7 @@ unsafe extern "C" fn process_preop_callback(
                 let target = String::from_utf16_lossy(unsafe {
                     slice::from_raw_parts(target.Buffer, target.Length.into())
                 });
-                log!("Process object: {source:?} -> {target:?}");
+                trace!("Process object: {source:?} -> {target:?}");
             }
 
             drop(guard);

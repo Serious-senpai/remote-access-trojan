@@ -1,5 +1,6 @@
 use widestring::{U16CStr, u16cstr};
 
+pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
 pub const SERVICE_REGISTRY: &U16CStr =
     u16cstr!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\Violet");
 

@@ -13,7 +13,7 @@ mod wrappers;
 use core::ffi::c_void;
 use core::{mem, ptr};
 
-use log::{LevelFilter, error, info};
+use log::LevelFilter;
 use rat_common::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
 use wdk_sys::_LOCK_OPERATION::IoReadAccess;
