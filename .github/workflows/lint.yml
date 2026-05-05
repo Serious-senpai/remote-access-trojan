@@ -58,17 +58,17 @@ jobs:
           extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
           cargo install cargo-wdk
 
+      - name: Build everything
+        shell: cmd
+        run: scripts\build.bat dev
+
       - name: Run clippy (rat-driver)
         working-directory: rat-driver
-        run: |
-          cargo wdk build || true
-          cargo clippy --all-features --no-deps -- -D warnings
+        run: cargo clippy --all-features --no-deps -- -D warnings
 
       - name: Run clippy (rat-efi)
         working-directory: rat-efi
-        run: |
-          cargo build
-          cargo clippy --all-features --no-deps -- -D warnings
+        run: cargo clippy --all-features --no-deps -- -D warnings
 
       - name: Run clippy
         run: cargo clippy --all-features --no-deps -- -D warnings

@@ -1,9 +1,8 @@
 @echo off
 
 for %%f in ("%~dp0..") do set root=%%~ff
-cd /d %root%
-
 echo Found repository root: %root%
+set current=%cd%
 
 set profile=%~1
 if "%profile%"=="" set profile=release
@@ -20,3 +19,5 @@ cargo build --profile %profile%
 
 cd /d %root%
 cargo build --profile %profile%
+
+cd /d %current%

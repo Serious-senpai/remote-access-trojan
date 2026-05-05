@@ -23,11 +23,11 @@ DownlevelDriverFile.DelFiles = 12
 
 ; ================= Standard install sections =================
 
-[DefaultInstall.NT$ARCH$.10.0...25952]
+[DefaultInstall.NT$ARCH$]
 OptionDesc = %ServiceDesc%
 CopyFiles  = DriverFile
 
-[DefaultInstall.NT$ARCH$.10.0...25952.Services]
+[DefaultInstall.NT$ARCH$.Services]
 AddService = %ServiceName%, , DefaultInstallService
 
 ; ================= Support sections =================
@@ -40,67 +40,17 @@ rat_driver.sys
 DisplayName    = %ServiceName%
 Description    = %ServiceDesc%
 ServiceBinary  = %13%\rat_driver.sys
-Dependencies   = "FltMgr"                         ; required for minifilter
-ServiceType    = 2                                ; SERVICE_FILE_SYSTEM_DRIVER
+ServiceType    = 1                                ; SERVICE_KERNEL_DRIVER
 StartType      = 3                                ; SERVICE_DEMAND_START - good for development, change to 2 to start on boot
 ErrorControl   = 1                                ; SERVICE_ERROR_NORMAL
 LoadOrderGroup = "FSFilter Activity Monitor"
 AddReg         = DefaultInstallService.AddRegistry
 
-; A pain in the ass: https://community.osr.com/t/defaultinstall-decorated-with-architecture-os-version/59725
-; In some versions of Windows 10 and older, these registry keys must be directly under HKR for minifilter to work.
-; In other versions of Windows 10 and newer, these registry keys must be nested under HKR\Parameters, and infverif
-; rejects them otherwise.
 [DefaultInstallService.AddRegistry]
 HKR, "Parameters", "SupportedFeatures", 0x00010001, 0x3
 HKR, "Parameters\Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
 HKR, "Parameters\Instances\"%InstanceName%, "Altitude", 0x00000000, %InstanceAltitude%
 HKR, "Parameters\Instances\"%InstanceName%, "Flags", 0x00010001, %InstanceFlags%
-
-; ================= Downlevel standard install sections =================
-
-[DefaultInstall.NT$ARCH$]
-OptionDesc = %ServiceDesc%
-CopyFiles  = DownlevelDriverFile.CopyFiles
-
-[DefaultInstall.NT$ARCH$.Services]
-AddService = %ServiceName%, , DownlevelDefaultInstallService
-
-; ================= Downlevel standard uninstall sections =================
-
-[DefaultUninstall.NT$ARCH$]
-LegacyUninstall = 1
-DelFiles        = DownlevelDriverFile.DelFiles
-
-[DefaultUninstall.NT$ARCH$.Services]
-DelService = %ServiceName%, 0x200 ; Ensure service is stopped before deleting
-
-; ================= Downlevel support sections =================
-
-[DownlevelDriverFile.CopyFiles]
-rat_driver.sys
-
-[DownlevelDriverFile.DelFiles]
-rat_driver.sys
-
-[DownlevelDefaultInstallService]
-DisplayName    = %ServiceName%
-Description    = %ServiceDesc%
-ServiceBinary  = %12%\rat_driver.sys
-Dependencies   = "FltMgr"                         ; required for minifilter
-ServiceType    = 2                                ; SERVICE_FILE_SYSTEM_DRIVER
-StartType      = 3                                ; SERVICE_DEMAND_START - good for development, change to 2 to start on boot
-ErrorControl   = 1                                ; SERVICE_ERROR_NORMAL
-LoadOrderGroup = "FSFilter Activity Monitor"
-AddReg         = DownlevelDefaultInstallService.AddRegistry
-
-; Only in here do we not use the "Parameters" subkey (this is also the reason why we need a separate downlevel install
-; section I guess?)
-[DownlevelDefaultInstallService.AddRegistry]
-HKR, , "SupportedFeatures", 0x00010001, 0x3
-HKR, "Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
-HKR, "Instances\"%InstanceName%, "Altitude", 0x00000000, %InstanceAltitude%
-HKR, "Instances\"%InstanceName%, "Flags", 0x00010001, %InstanceFlags%
 
 ; ================= Strings =================
 

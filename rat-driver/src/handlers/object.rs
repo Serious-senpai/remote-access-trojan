@@ -41,9 +41,10 @@ pub fn ob_register_callbacks() -> anyhow::Result<()> {
 
     let mut handle = ptr::null_mut();
     let status = unsafe { ObRegisterCallbacks(&mut object_callbacks, &mut handle) };
-    if !nt_success(status) {
-        anyhow::bail!("ObRegisterCallbacks error: 0x{status:X}");
-    }
+    anyhow::ensure!(
+        nt_success(status),
+        "ObRegisterCallbacks failed: 0x{status:X}",
+    );
 
     Ok(())
 }
