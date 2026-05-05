@@ -7,7 +7,7 @@ use crate::hooks::winload::patch_winload;
 use crate::patcher::{VariablePatternFinder, insert_call_trampoline, return_zero_patch};
 use crate::utils;
 
-type BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
+type _BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
     entrypoint: *mut u8,
     params: *mut u8,
     top_of_stack: *mut u8,
@@ -16,21 +16,21 @@ type BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
     descriptor_table_context: *mut u8,
 ) -> i64;
 
-static ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: AtomicI64 = AtomicI64::new(0);
+static _ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: AtomicI64 = AtomicI64::new(0);
 
-const BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
+const _BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[[
     0x03, 0x4D, 0x67, 0x48, 0x89, 0x44, 0x24, 0x28, // 8 bytes before
     0xE8, 0xFE, 0x29, 0x08, 0x00, // call BlpArchTransferTo64BitApplication
     0x44, 0x8B, 0xF0, 0xE8, 0xA6, 0xBF, 0x00, 0x00, // 8 bytes after
 ]];
 
-const BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
+const _BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
     0xCC, // 1 byte before (int)
     0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, // first 8 bytes
     0x41, 0x55, 0x41, 0x56, 0x48, 0x8B, 0xEC, 0x48, // next 8 bytes
 ]];
 
-unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
+unsafe extern "efiapi" fn _blp_arch_transfer_to64_bit_application_hooked(
     entrypoint: *mut u8,
     params: *mut u8,
     top_of_stack: *mut u8,
@@ -46,10 +46,10 @@ unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
     }
 
     let original =
-        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire) as *const u8;
+        _ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION.load(Ordering::Acquire) as *const u8;
     unsafe {
         let original_fn =
-            mem::transmute::<*const u8, BlpArchTransferTo64BitApplicationFn>(original);
+            mem::transmute::<*const u8, _BlpArchTransferTo64BitApplicationFn>(original);
         original_fn(
             entrypoint,
             params,
@@ -64,7 +64,7 @@ unsafe extern "efiapi" fn blp_arch_transfer_to64_bit_application_hooked(
 pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
     info!("Patching bootmgfw_old.efi...");
 
-    match VariablePatternFinder::new(BM_FW_VERIFY_SELF_INTEGRITY).find_mut(bootmgfw) {
+    match VariablePatternFinder::new(_BM_FW_VERIFY_SELF_INTEGRITY).find_mut(bootmgfw) {
         Some(original) => {
             let original = &mut original[1..];
             let patched = return_zero_patch();
@@ -78,12 +78,12 @@ pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
     }
 
     if let Some(original) =
-        VariablePatternFinder::new(BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw)
+        VariablePatternFinder::new(_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw)
     {
         let original = &mut original[8..];
         let original_call_addr =
             original.as_ptr() as i64 + 5 + i64::from(utils::extract_call_rel32(original));
-        ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION
+        _ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION
             .store(original_call_addr, Ordering::Release);
 
         // While patching this `call` instruction, we also override some instructions after it
@@ -96,7 +96,7 @@ pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
         // corruption (maybe?).
         if insert_call_trampoline(
             original,
-            blp_arch_transfer_to64_bit_application_hooked as *const u8 as u64,
+            _blp_arch_transfer_to64_bit_application_hooked as *const u8 as u64,
             None,
             None,
         ) {
