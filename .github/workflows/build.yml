@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -Force target\release\rat_driver_package\
           copy rat-driver\target\release\rat_driver_package\* target\release\rat_driver_package\
-          copy rat-efi\target\x86_64-unknown-uefi\release\rat-efi.efi \target\release\rat-efi.efi
+          copy rat-efi\target\x86_64-unknown-uefi\release\rat-efi.efi target\release\rat-efi.efi
 
       - name: Upload Windows executables
         uses: actions/upload-artifact@v7
