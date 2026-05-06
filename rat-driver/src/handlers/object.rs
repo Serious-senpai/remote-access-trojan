@@ -15,14 +15,14 @@ use wdk_sys::{
     OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS,
     PsProcessType, UNICODE_STRING,
 };
-use widestring::u16cstr;
 
+use crate::global::ALTITUDE;
 use crate::trace;
 
-pub fn ob_register_callbacks() -> anyhow::Result<()> {
+pub fn ob_register_callbacks() -> anyhow::Result<*mut c_void> {
     let mut altitude = UNICODE_STRING::default();
     unsafe {
-        RtlInitUnicodeString(&mut altitude, u16cstr!("360000").as_ptr());
+        RtlInitUnicodeString(&mut altitude, ALTITUDE.as_ptr());
     }
 
     let mut object_operations = [OB_OPERATION_REGISTRATION {
@@ -46,7 +46,7 @@ pub fn ob_register_callbacks() -> anyhow::Result<()> {
         "ObRegisterCallbacks failed: 0x{status:X}",
     );
 
-    Ok(())
+    Ok(handle)
 }
 
 unsafe extern "C" fn process_preop_callback(

