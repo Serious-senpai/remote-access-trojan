@@ -484,6 +484,7 @@ version = "0.1.0"
 name = "rat-driver"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "com_logger",
  "const_format",

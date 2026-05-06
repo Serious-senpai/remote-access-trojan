@@ -1,6 +1,6 @@
 use alloc::string::String;
 use core::ffi::c_void;
-use core::{ptr, slice};
+use core::{mem, ptr, slice};
 
 use rat_common::utils::DropGuard;
 use wdk::nt_success;
@@ -79,10 +79,16 @@ unsafe extern "C" fn process_preop_callback(
                 && nt_success(status)
             {
                 let source = String::from_utf16_lossy(unsafe {
-                    slice::from_raw_parts(source.Buffer, source.Length.into())
+                    slice::from_raw_parts(
+                        source.Buffer,
+                        usize::from(source.Length) / mem::size_of::<u16>(),
+                    )
                 });
                 let target = String::from_utf16_lossy(unsafe {
-                    slice::from_raw_parts(target.Buffer, target.Length.into())
+                    slice::from_raw_parts(
+                        target.Buffer,
+                        usize::from(target.Length) / mem::size_of::<u16>(),
+                    )
                 });
                 trace!("Process object: {source:?} -> {target:?}");
             }

