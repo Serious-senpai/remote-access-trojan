@@ -195,7 +195,7 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
 
                 match AhoCorasickBuilder::new()
                     .ascii_case_insensitive(true)
-                    .build(&[unsafe {
+                    .build([unsafe {
                         slice::from_raw_parts(
                             RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
                             RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.len() * mem::size_of::<u16>(),

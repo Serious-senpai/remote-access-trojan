@@ -70,6 +70,7 @@ unsafe extern "C" fn registry_callback(
 
     let notify_cls = notify_cls as c_int;
     let object = unsafe {
+        #[allow(non_upper_case_globals)]
         match notify_cls {
             RegNtPreDeleteKey => parse_notify_info!(REG_DELETE_KEY_INFORMATION),
             RegNtPreSetValueKey => parse_notify_info!(REG_SET_VALUE_KEY_INFORMATION),
