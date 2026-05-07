@@ -8,8 +8,9 @@ use windows_sys::Win32::System::SystemServices::{
     IMAGE_BASE_RELOCATION, IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW,
 };
 
+use crate::utils;
+use crate::utils::pe;
 use crate::utils::types::_LIST_ENTRY;
-use crate::utils::{self, pe};
 
 unsafe fn resolve_export_address(module: &[u8], name: &CStr) -> Option<u64> {
     let mut resolved = None;

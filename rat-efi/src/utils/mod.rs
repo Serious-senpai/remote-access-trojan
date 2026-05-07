@@ -3,11 +3,10 @@ pub mod pe;
 pub mod types;
 
 use core::arch::asm;
-use core::ffi::CStr;
 use core::time::Duration;
 use core::{mem, slice};
 
-use log::{debug, info, trace};
+use log::info;
 use types::{_BLDR_DATA_TABLE_ENTRY, _KLDR_DATA_TABLE_ENTRY, _LIST_ENTRY};
 use uefi::boot;
 
@@ -111,10 +110,8 @@ pub unsafe fn get_boot_loaded_module<'a>(
     module_name: *const u16,
 ) -> Option<&'a _BLDR_DATA_TABLE_ENTRY> {
     let mut entry = load_order_list_head;
-    debug!("Searching among loaded modules");
 
     let module_name = if module_name.is_null() {
-        debug!("Module name is NULL");
         return None;
     } else {
         let mut size = 0;
@@ -125,7 +122,6 @@ pub unsafe fn get_boot_loaded_module<'a>(
         unsafe { slice::from_raw_parts(module_name, size) }
     };
 
-    debug!("Finding module_name = {module_name:02X?}");
     loop {
         match unsafe { entry.as_ref() } {
             Some(e) => {
@@ -168,11 +164,8 @@ pub unsafe fn get_boot_loaded_module<'a>(
                         if let Some(c) = cname.last_mut() {
                             *c = 0;
                         }
-                        let cname = CStr::from_bytes_until_nul(&cname);
-                        trace!("Module name = {cname:?}");
 
                         if name == module_name {
-                            debug!("Found module with matching name ({cname:?})");
                             break Some(e);
                         }
                     }

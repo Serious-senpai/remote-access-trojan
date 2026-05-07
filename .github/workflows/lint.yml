@@ -16,22 +16,21 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly,1.94
+          toolchain: nightly-2026-05-01,1.94
           components: clippy,rustfmt
           cache: false
           rustflags: ""
-          target: x86_64-unknown-uefi
+
+      - name: Run rustfmt via cargo fmt (rat-driver)
+        working-directory: rat-driver
+        run: cargo +nightly-2026-05-01 fmt -- --check
+
+      - name: Run rustfmt via cargo fmt (rat-efi)
+        working-directory: rat-efi
+        run: cargo +nightly-2026-05-01 fmt -- --check
 
       - name: Run rustfmt via cargo fmt
-        run: cargo +nightly fmt -- --check
-
-      - name: Run rustfmt via cargo fmt (kernel driver)
-        working-directory: rat-driver
-        run: cargo +nightly fmt -- --check
-
-      - name: Run rustfmt via cargo fmt (UEFI)
-        working-directory: rat-efi
-        run: cargo +nightly fmt -- --check
+        run: cargo +nightly-2026-05-01 fmt -- --check
 
   clippy:
     name: Run clippy
@@ -44,7 +43,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly,1.94
+          toolchain: nightly-2026-05-01,1.94
           components: clippy,rustfmt
           cache: false
           rustflags: ""
@@ -59,15 +58,17 @@ jobs:
           extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
           cargo install cargo-wdk
 
-      - name: Run clippy
+      - name: Build everything
+        shell: cmd
+        run: scripts\build.bat dev
+
+      - name: Run clippy (rat-driver)
+        working-directory: rat-driver
         run: cargo clippy --all-features --no-deps -- -D warnings
 
-      - name: Run clippy (kernel driver)
-        working-directory: rat-driver
-        run: |
-          cargo wdk build || true
-          cargo clippy --all-features --no-deps -- -D warnings
-
-      - name: Run clippy (UEFI)
+      - name: Run clippy (rat-efi)
         working-directory: rat-efi
+        run: cargo clippy --all-features --no-deps -- -D warnings
+
+      - name: Run clippy
         run: cargo clippy --all-features --no-deps -- -D warnings

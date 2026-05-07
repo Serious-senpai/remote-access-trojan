@@ -23,4 +23,8 @@ pub struct Arguments {
     /// Path to the log file
     #[arg(long, default_value = "target/client.log")]
     pub log_path: PathBuf,
+
+    /// Enable interaction with Windows Service Control Manager (SCM)
+    #[arg(long)]
+    pub scm: bool,
 }

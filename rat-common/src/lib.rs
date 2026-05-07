@@ -2,6 +2,7 @@
 
 #[cfg(feature = "std")]
 pub mod framework;
+pub mod global;
 pub mod kernel;
 #[cfg(feature = "std")]
 pub mod logger;
@@ -11,3 +12,4 @@ pub mod reader;
 pub mod schema;
 #[cfg(feature = "std")]
 pub mod snowflake;
+pub mod utils;

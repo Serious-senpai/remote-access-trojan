@@ -1,0 +1,21 @@
+[package]
+name = "rat-dropper"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rat-common = { path = "../rat-common" }
+
+[dependencies.windows-sys]
+workspace = true
+features = [
+    "Win32",
+        "Win32_Security",
+        "Win32_System",
+            "Win32_System_Ioctl",
+            "Win32_System_Threading",
+            "Win32_System_WindowsProgramming",
+]
+
+[lints]
+workspace = true

