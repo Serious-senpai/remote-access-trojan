@@ -21,7 +21,8 @@ use widestring::{U16CStr, Utf16Str, u16cstr};
 
 use crate::global::{
     CM_REGISTER_CALLBACK_COOKIE, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, RAT_CLIENT,
-    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, SERVICE_REGISTRY, SERVICE_REGISTRY_AHO_CORASICK,
+    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
+    RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
 };
 use crate::handlers::object;
 use crate::handlers::registry::cm_register_callback;
@@ -53,7 +54,7 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
     let mut attributes = OBJECT_ATTRIBUTES::default();
     let mut root_directory = UNICODE_STRING::default();
     unsafe {
-        RtlInitUnicodeString(&mut root_directory, SERVICE_REGISTRY.as_ptr());
+        RtlInitUnicodeString(&mut root_directory, RAT_CLIENT_SERVICE_REGISTRY.as_ptr());
         InitializeObjectAttributes(
             &mut attributes,
             &mut root_directory,
@@ -138,7 +139,7 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
 
     match object::ob_register_callbacks() {
         Ok(handle) => {
-            info!("Register object callbacks successfully");
+            info!("Registered object callbacks");
 
             if let Some(driver) = unsafe { driver.as_mut() } {
                 let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(handle, Ordering::AcqRel);
@@ -181,7 +182,7 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
 
     match cm_register_callback(driver) {
         Ok(cookie) => {
-            info!("Register registry callbacks successfully");
+            info!("Registered registry callbacks");
 
             if let Some(driver) = unsafe { driver.as_mut() } {
                 let cookie =
@@ -196,11 +197,17 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
                     .ascii_case_insensitive(true)
                     .build(&[unsafe {
                         slice::from_raw_parts(
-                            SERVICE_REGISTRY.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
-                            SERVICE_REGISTRY.len() * mem::size_of::<u16>(),
+                            RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
+                            RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.len() * mem::size_of::<u16>(),
                         )
                     }]) {
                     Ok(ac) => {
+                        info!("Constructed Aho-Corasick automaton {:?}", unsafe {
+                            slice::from_raw_parts(
+                                RAT_CLIENT_SERVICE_REGISTRY.as_ptr().cast::<u8>(), // interpret as a &[u8] slice for aho-corasick
+                                RAT_CLIENT_SERVICE_REGISTRY.len() * mem::size_of::<u16>(),
+                            )
+                        });
                         let ac = SERVICE_REGISTRY_AHO_CORASICK
                             .swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
                         if !ac.is_null() {

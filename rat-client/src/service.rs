@@ -3,7 +3,7 @@ use std::sync::Once;
 use std::time::Duration;
 
 use log::{error, info};
-use rat_common::global::WINDOWS_SERVICE_NAME;
+use rat_common::global::RAT_CLIENT_SERVICE_NAME;
 use tokio::task::{self, JoinHandle};
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
@@ -16,7 +16,7 @@ static SERVICE_STOPPED: Once = Once::new();
 define_windows_service!(ffi_service_main, service_main);
 
 fn service_main(_: Vec<OsString>) {
-    match service_control_handler::register(WINDOWS_SERVICE_NAME, |event| {
+    match service_control_handler::register(RAT_CLIENT_SERVICE_NAME, |event| {
         info!("Received service control event: {event:?}");
         if event == ServiceControl::Interrogate {
             ServiceControlHandlerResult::NoError
@@ -54,7 +54,8 @@ impl WindowsServiceDispatcher {
     pub fn start() -> Self {
         Self {
             thread: task::spawn_blocking(|| {
-                if let Err(e) = service_dispatcher::start(WINDOWS_SERVICE_NAME, ffi_service_main) {
+                if let Err(e) = service_dispatcher::start(RAT_CLIENT_SERVICE_NAME, ffi_service_main)
+                {
                     error!("Windows Service error: {e}");
                 }
             }),

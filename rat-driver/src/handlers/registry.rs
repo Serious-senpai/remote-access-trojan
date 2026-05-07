@@ -7,16 +7,18 @@ use wdk_sys::_REG_NOTIFY_CLASS::{
     RegNtPreDeleteKey, RegNtPreDeleteValueKey, RegNtPreRenameKey, RegNtPreReplaceKey,
     RegNtPreSaveKey, RegNtPreSetInformationKey, RegNtPreSetValueKey, RegNtPreUnLoadKey,
 };
-use wdk_sys::ntddk::{CmCallbackGetKeyObjectIDEx, CmRegisterCallbackEx, RtlInitUnicodeString};
+use wdk_sys::ntddk::{
+    CmCallbackGetKeyObjectIDEx, CmRegisterCallbackEx, PsGetCurrentProcessId, RtlInitUnicodeString,
+};
 use wdk_sys::{
     LARGE_INTEGER, NTSTATUS, PDRIVER_OBJECT, REG_DELETE_KEY_INFORMATION,
     REG_DELETE_VALUE_KEY_INFORMATION, REG_RENAME_KEY_INFORMATION, REG_REPLACE_KEY_INFORMATION,
     REG_SAVE_KEY_INFORMATION, REG_SET_INFORMATION_KEY_INFORMATION, REG_SET_VALUE_KEY_INFORMATION,
-    REG_UNLOAD_KEY_INFORMATION, STATUS_SUCCESS, UNICODE_STRING,
+    REG_UNLOAD_KEY_INFORMATION, STATUS_ACCESS_DENIED, STATUS_SUCCESS, UNICODE_STRING,
 };
 
 use crate::global::{ALTITUDE, CM_REGISTER_CALLBACK_COOKIE, SERVICE_REGISTRY_AHO_CORASICK};
-use crate::trace;
+use crate::info;
 
 pub fn cm_register_callback(driver: PDRIVER_OBJECT) -> anyhow::Result<LARGE_INTEGER> {
     let mut altitude = UNICODE_STRING::default();
@@ -61,6 +63,11 @@ unsafe extern "C" fn registry_callback(
         };
     }
 
+    let pid = unsafe { PsGetCurrentProcessId() } as u64;
+    if pid <= 4 {
+        return STATUS_SUCCESS;
+    }
+
     let notify_cls = notify_cls as c_int;
     let object = unsafe {
         match notify_cls {
@@ -98,8 +105,8 @@ unsafe extern "C" fn registry_callback(
                     .find(unsafe { slice::from_raw_parts(name.Buffer.cast(), name.Length.into()) })
                     .is_some()
             {
-                // FIXME: No match currently?
-                trace!("Registry callback (notify_cls={notify_cls}): {name:?}");
+                info!("Blocking registry operation from process {pid} (class {notify_cls})");
+                return STATUS_ACCESS_DENIED;
             }
         }
     }
