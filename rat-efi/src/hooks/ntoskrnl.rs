@@ -1,11 +1,11 @@
 use core::arch::global_asm;
-use core::slice;
+use core::{ptr, slice};
 
 use log::{error, info, warn};
 use rat_common::kernel::KernelHandoff;
+use rat_common::utils::{get_function_code, return_zero_patch};
 use windows_sys::w;
 
-use crate::patcher::return_zero_patch;
 use crate::utils;
 use crate::utils::types::_LIST_ENTRY;
 use crate::utils::{mapper, pe};
@@ -41,9 +41,30 @@ pub fn patch_ntoskrnl(
     load_order_list_head: &_LIST_ENTRY,
 ) {
     info!("Patching ntoskrnl.exe...");
+    let mut rtl_random_addr = ptr::null_mut();
+    let mut rtl_random_ex_addr = ptr::null_mut();
+    unsafe {
+        pe::iterate_export_address_table_mut(ntoskrnl, |name, function| {
+            if name == c"RtlRandom" || name == c"RtlRandomEx" {
+                let patched = return_zero_patch();
+                function[..patched.len()].copy_from_slice(patched);
+                info!(
+                    "Patched function {name:?} at address {:p} ({} bytes)",
+                    function.as_ptr(),
+                    patched.len(),
+                );
+
+                if name == c"RtlRandom" {
+                    rtl_random_addr = function[patched.len()..].as_mut_ptr();
+                } else {
+                    rtl_random_ex_addr = function[patched.len()..].as_mut_ptr();
+                }
+            }
+        });
+    }
 
     if empty_buffer.is_empty() {
-        warn!("No usuable buffer is provided. No ntoskrnl hooks will be installed.");
+        warn!("No usuable buffer is provided. No DriverEntry hooks will be installed.");
         return;
     }
 
@@ -73,14 +94,9 @@ pub fn patch_ntoskrnl(
                 slice::from_raw_parts(entrypoint, 32)
             });
 
-            let trampoline = utils::get_function_code(
+            let trampoline = get_function_code(
                 DriverEntryHooked_trampoline as *const u8,
                 DriverEntryHooked_trampoline_end as *const u8,
-            );
-            info!(
-                "DriverEntry hook trampoline ({} bytes): {:02X?}",
-                trampoline.len(),
-                trampoline,
             );
 
             let cr0 = utils::DisableWriteProtection::new();
@@ -98,6 +114,8 @@ pub fn patch_ntoskrnl(
                     original_driver_entry: entrypoint.as_ptr() as *mut u8,
                     original_instructions: empty_buffer.as_ptr(),
                     original_instructions_len: size,
+                    rtl_random_addr,
+                    rtl_random_ex_addr,
                 };
                 let empty_buffer = &mut empty_buffer[size..];
                 empty_buffer
@@ -122,18 +140,5 @@ pub fn patch_ntoskrnl(
             warn!("No injected driver provided. DriverEntry hook will not be installed.");
             return;
         }
-    }
-
-    unsafe {
-        pe::iterate_export_address_table_mut(ntoskrnl, |name, function| {
-            if name == c"RtlRandom" || name == c"RtlRandomEx" {
-                let patched = return_zero_patch();
-                function[..patched.len()].copy_from_slice(patched);
-                info!(
-                    "Patched function {name:?} at address {:p}",
-                    function.as_ptr()
-                );
-            }
-        });
     }
 }

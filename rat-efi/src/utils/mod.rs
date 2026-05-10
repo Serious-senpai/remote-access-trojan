@@ -95,13 +95,6 @@ impl Drop for DisableWriteProtection {
     }
 }
 
-pub fn get_function_code(start: *const u8, end: *const u8) -> &'static [u8] {
-    let start_addr = start as usize;
-    let end_addr = end as usize;
-
-    unsafe { slice::from_raw_parts(start, end_addr.saturating_sub(start_addr)) }
-}
-
 const MODULE_NAME_MAX_LEN: usize = 32;
 
 /// Reference: https://github.com/Mattiwatti/EfiGuard/blob/801ad43372021d3806ef1be22dddfd0fb860693b/EfiGuardDxe/PatchWinload.c#L57-L79

