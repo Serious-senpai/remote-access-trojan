@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use log::{debug, error, info, warn};
-use rat_common::utils::insert_jmp_trampoline;
+use rat_common::windows::utils::insert_jmp_trampoline;
 use uefi::Status;
 use windows_sys::w;
 

@@ -2,8 +2,6 @@
 
 #[cfg(feature = "std")]
 pub mod framework;
-pub mod global;
-pub mod kernel;
 #[cfg(feature = "std")]
 pub mod logger;
 #[cfg(feature = "std")]
@@ -13,3 +11,5 @@ pub mod schema;
 #[cfg(feature = "std")]
 pub mod snowflake;
 pub mod utils;
+#[cfg(any(windows, target_os = "uefi"))]
+pub mod windows;

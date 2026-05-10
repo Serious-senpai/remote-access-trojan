@@ -13,7 +13,7 @@ mod wrappers;
 use core::{mem, slice};
 
 use log::LevelFilter;
-use rat_common::kernel::KernelHandoff;
+use rat_common::windows::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
 use wdk_sys::{
     NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER, STATUS_UNSUCCESSFUL,

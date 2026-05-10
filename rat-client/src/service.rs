@@ -3,7 +3,7 @@ use std::sync::Once;
 use std::time::Duration;
 
 use log::{error, info};
-use rat_common::global::RAT_CLIENT_SERVICE_NAME;
+use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
 use tokio::task::{self, JoinHandle};
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,

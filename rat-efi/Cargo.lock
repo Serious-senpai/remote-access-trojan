@@ -93,6 +93,9 @@ dependencies = [
 [[package]]
 name = "rat-common"
 version = "0.1.0"
+dependencies = [
+ "windows-sys",
+]
 
 [[package]]
 name = "rat-efi"
