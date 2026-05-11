@@ -61,7 +61,7 @@ pub unsafe extern "system" fn driver_entry(
                 extra.original_instructions_len as u32,
             )
         } {
-            Ok(mdl) => {
+            Ok(mut mdl) => {
                 mdl.as_mut_slice().copy_from_slice(unsafe {
                     slice::from_raw_parts(
                         extra.original_instructions,

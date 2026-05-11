@@ -347,7 +347,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             Some(initialize_thread_routine),
-            Box::into_raw(Box::new(extra.clone())).cast(),
+            Box::into_raw(Box::new(*extra)).cast(),
         )
     };
     anyhow::ensure!(
