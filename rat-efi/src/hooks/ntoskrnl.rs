@@ -210,7 +210,6 @@ pub fn patch_ntoskrnl(
         }
         None => {
             warn!("No injected driver provided. DriverEntry hook will not be installed.");
-            return;
         }
     }
 }
