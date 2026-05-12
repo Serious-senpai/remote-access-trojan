@@ -1,8 +1,12 @@
 #[derive(Debug, Clone, Copy)]
+pub struct InstructionRecoveryInfo {
+    pub address: *mut u8,
+    pub instructions: *const u8,
+    pub instructions_len: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct KernelHandoff {
-    pub original_driver_entry: *mut u8,
-    pub original_instructions: *const u8,
-    pub original_instructions_len: usize,
-    pub rtl_random_addr: *mut u8,
-    pub rtl_random_ex_addr: *mut u8,
+    pub driver_entry: InstructionRecoveryInfo,
+    pub mm_verify_callback_function_check_flags: InstructionRecoveryInfo,
 }

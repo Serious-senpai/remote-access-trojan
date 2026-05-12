@@ -80,8 +80,6 @@ fn entrypoint() -> uefi::Result<(), String> {
     bootmgfw::patch_bootmgfw(bootmgfw_buffer);
 
     info!("Starting bootmgfw_old.efi...");
-    countdown(3);
-
     boot::start_image(bootmgfw_handle).convert("Cannot start image")
 }
 

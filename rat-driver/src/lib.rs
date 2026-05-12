@@ -51,21 +51,21 @@ pub unsafe extern "system" fn driver_entry(
 
     // Recover original instructions
     // Use an MDL to create a writable system mapping for the read-only executable memory.
-    if !extra.original_driver_entry.is_null()
-        && !extra.original_instructions.is_null()
-        && extra.original_instructions_len > 0
+    if !extra.driver_entry.address.is_null()
+        && !extra.driver_entry.instructions.is_null()
+        && extra.driver_entry.instructions_len > 0
     {
         match unsafe {
             MdlGuard::new(
-                extra.original_driver_entry.cast(),
-                extra.original_instructions_len as u32,
+                extra.driver_entry.address.cast(),
+                extra.driver_entry.instructions_len as u32,
             )
         } {
             Ok(mut mdl) => {
                 mdl.as_mut_slice().copy_from_slice(unsafe {
                     slice::from_raw_parts(
-                        extra.original_instructions,
-                        extra.original_instructions_len,
+                        extra.driver_entry.instructions,
+                        extra.driver_entry.instructions_len,
                     )
                 });
             }
@@ -92,10 +92,10 @@ pub unsafe extern "system" fn driver_entry(
     // Call the original DriverEntry
     info!(
         "Calling original DriverEntry at {:p}...",
-        extra.original_driver_entry,
+        extra.driver_entry.address,
     );
     let status = unsafe {
-        let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.original_driver_entry);
+        let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.driver_entry.address);
         original_fn(driver, registry_path)
     };
 

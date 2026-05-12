@@ -14,5 +14,8 @@ sysinfo = { workspace = true, features = ["system"] }
 tokio = { workspace = true, features = ["io-util", "net", "process", "rt-multi-thread", "signal", "time"] }
 windows-service = { workspace = true }
 
+[dependencies.windows-sys]
+workspace = true
+
 [lints]
 workspace = true

