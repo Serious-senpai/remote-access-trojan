@@ -33,7 +33,7 @@ where
     }
 }
 
-pub fn get_function_code(start: *const u8, end: *const u8) -> &'static [u8] {
+pub unsafe fn get_function_code(start: *const u8, end: *const u8) -> &'static [u8] {
     let start_addr = start as usize;
     let end_addr = end as usize;
 

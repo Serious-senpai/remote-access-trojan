@@ -62,7 +62,8 @@ pub fn insert_call_trampoline(
     original: Option<&mut [u8]>,
     size: Option<&mut usize>,
 ) -> bool {
-    let patched = get_function_code(CallTrampoline as *const u8, CallTrampolineEnd as *const u8);
+    let patched =
+        unsafe { get_function_code(CallTrampoline as *const u8, CallTrampolineEnd as *const u8) };
 
     _call_insertion(target, addr, original, size, patched, 2)
 }
@@ -87,7 +88,8 @@ pub fn insert_jmp_trampoline(
     original: Option<&mut [u8]>,
     size: Option<&mut usize>,
 ) -> bool {
-    let patched = get_function_code(JmpTrampoline as *const u8, JmpTrampolineEnd as *const u8);
+    let patched =
+        unsafe { get_function_code(JmpTrampoline as *const u8, JmpTrampolineEnd as *const u8) };
 
     _call_insertion(target, addr, original, size, patched, 2)
 }
@@ -107,7 +109,7 @@ unsafe extern "win64" {
 }
 
 pub fn return_zero_patch() -> &'static [u8] {
-    get_function_code(ReturnZero as *const u8, ReturnZeroEnd as *const u8)
+    unsafe { get_function_code(ReturnZero as *const u8, ReturnZeroEnd as *const u8) }
 }
 
 global_asm!(
@@ -125,5 +127,5 @@ unsafe extern "win64" {
 }
 
 pub fn return_one_patch() -> &'static [u8] {
-    get_function_code(ReturnOne as *const u8, ReturnOneEnd as *const u8)
+    unsafe { get_function_code(ReturnOne as *const u8, ReturnOneEnd as *const u8) }
 }

@@ -161,10 +161,12 @@ pub fn patch_ntoskrnl(
                 slice::from_raw_parts(entrypoint, 32)
             });
 
-            let trampoline = get_function_code(
-                DriverEntryHooked_trampoline as *const u8,
-                DriverEntryHooked_trampoline_end as *const u8,
-            );
+            let trampoline = unsafe {
+                get_function_code(
+                    DriverEntryHooked_trampoline as *const u8,
+                    DriverEntryHooked_trampoline_end as *const u8,
+                )
+            };
 
             let cr0 = utils::DisableWriteProtection::new();
             let driver_image_base = empty_buffer.as_ptr() as u64;
