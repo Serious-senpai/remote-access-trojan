@@ -4,14 +4,17 @@ mod state;
 
 use std::net::SocketAddrV4;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use log::error;
+use log::{error, info};
 use poem::EndpointExt;
 use poem::endpoint::StaticFilesEndpoint;
-use poem::listener::TcpListener;
+use poem::listener::{Listener, RustlsCertificate, RustlsConfig, RustlsListener, TcpListener};
 use poem_openapi::OpenApiService;
 use rat_common::framework::{ModuleImpl, ModuleState};
+use tokio::fs;
+use tokio::net::ToSocketAddrs;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
@@ -36,6 +39,21 @@ impl AdminServer {
             _config: config,
             _state: ModuleState::new(),
         })
+    }
+
+    /// Reference: https://github.com/rustls/tokio-rustls/blob/main/examples/server.rs
+    async fn _prepare_tls_stream<T>(
+        &self,
+        listener: TcpListener<T>,
+    ) -> anyhow::Result<RustlsListener<TcpListener<T>, RustlsConfig>>
+    where
+        T: ToSocketAddrs + Send,
+    {
+        let cert = fs::read(self._config.tls_cert_path.as_ref()).await?;
+        let key = fs::read(self._config.tls_key_path.as_ref()).await?;
+        let config = RustlsConfig::new().fallback(RustlsCertificate::new().cert(cert).key(key));
+
+        Ok(listener.rustls(config))
     }
 }
 
@@ -78,7 +96,11 @@ impl ModuleImpl for AdminServer {
             .nest("/docs/openapi.json", spec)
             .nest("/docs/swagger", swagger)
             .data(state);
-        let server = poem::Server::new(TcpListener::bind(self._address));
+
+        let listener = self
+            ._prepare_tls_stream(TcpListener::bind(self._address))
+            .await?;
+        let server = poem::Server::new(listener);
 
         let self_cloned = self.clone();
         self._task.lock().await.replace(tokio::spawn(async move {
@@ -87,8 +109,9 @@ impl ModuleImpl for AdminServer {
                     app,
                     async move {
                         self_cloned.wait_until_stopped().await;
+                        info!("Shutting down Admin API server...");
                     },
-                    None,
+                    Some(Duration::from_secs(5)),
                 )
                 .await
             {

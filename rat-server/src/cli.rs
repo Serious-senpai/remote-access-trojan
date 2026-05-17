@@ -3,10 +3,6 @@ use std::path::PathBuf;
 use clap::{Parser, crate_description, crate_version};
 use log::LevelFilter;
 
-const fn _default_frontend_static_files() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../rat-frontend/dist")
-}
-
 #[derive(Debug, Parser)]
 #[command(
     long_about = crate_description!(),
@@ -14,13 +10,13 @@ const fn _default_frontend_static_files() -> &'static str {
     version = crate_version!(),
 )]
 pub struct Arguments {
-    /// Host of the C&C server
-    #[arg(short, long, default_value = "0.0.0.0:12110")]
-    pub cc_host: String,
+    /// Port of the C&C server
+    #[arg(long, default_value_t = 12110)]
+    pub cc_port: u16,
 
-    /// Host of the admin server.
-    #[arg(long, default_value = "127.0.0.1:12111")]
-    pub admin_host: String,
+    /// Port of the admin server
+    #[arg(long, default_value_t = 12111)]
+    pub admin_port: u16,
 
     /// The logging level.
     #[arg(long, default_value_t = LevelFilter::Info)]
@@ -44,6 +40,14 @@ pub struct Arguments {
     pub client_mpsc_channel_capacity: usize,
 
     /// Path to the frontend static files directory.
-    #[arg(long, default_value = _default_frontend_static_files())]
-    pub frontend_static_files: String,
+    #[arg(long, default_value = "rat-frontend/dist")]
+    pub frontend_static_files: PathBuf,
+
+    /// Path to the TLS certificate file in PEM format.
+    #[arg(long, default_value = "certs/cert.pem")]
+    pub tls_cert_path: PathBuf,
+
+    /// Path to the TLS private key file in PEM format.
+    #[arg(long, default_value = "certs/cert.key.pem")]
+    pub tls_key_path: PathBuf,
 }

@@ -7,13 +7,15 @@
                 <span class="current">{{ addr }}</span>
             </div>
             <div class="header-actions">
-                <button class="btn btn-primary" @click="createSession" :disabled="creatingSession">
-                    {{ creatingSession ? "Creating…" : "+ New Terminal" }}
+                <button class="btn btn-primary" @click="createSession" :disabled="creatingSession.loading">
+                    {{ creatingSession.loading ? "Creating…" : "+ New Terminal" }}
                 </button>
             </div>
         </div>
 
-        <div v-if="error" class="error-banner">{{ error }}</div>
+        <div v-if="loadingSessions.error" class="error-banner">{{ loadingSessions.error }}</div>
+        <div v-if="creatingSession.error" class="error-banner">{{ creatingSession.error }}</div>
+        <div v-if="deletingSession.error" class="error-banner">{{ deletingSession.error }}</div>
 
         <!-- Client Info -->
         <div class="client-info-panel" v-if="clientInfo?.info">
@@ -61,7 +63,7 @@
                         </span>
                     </span>
                     <span class="tab-close" role="button" tabindex="0" @click.stop="deleteSession(session.id)"
-                        @keydown.enter.stop="deleteSession(session.id)" title="Close session">×</span>
+                        @keydown.enter.stop="deleteSession(session.id)" title="Close session">x</span>
                 </button>
             </div>
             <div class="session-content">
@@ -70,17 +72,18 @@
             </div>
         </div>
 
-        <div v-else-if="!loading" class="empty-state">
+        <div v-else-if="!loadingSessions.loading" class="empty-state">
             No active sessions. Click <strong>+ New Terminal</strong> to start one.
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api/client";
 import type { components } from "../api/types";
 import TerminalSession from "../components/TerminalSession.vue";
+import { RequestStatus, withDeadline } from "../utils/common";
 
 type ClientAPI = components["schemas"]["ClientAPI"];
 type SessionMetadata = components["schemas"]["SessionMetadata"];
@@ -90,10 +93,12 @@ const props = defineProps<{ addr: string }>();
 const clientInfo = ref<ClientAPI | null>(null);
 const sessions = ref<SessionMetadata[]>([]);
 const activeSessionId = ref<string | null>(null);
-const loading = ref(true);
-const error = ref<string | null>(null);
-const creatingSession = ref(false);
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+const loadingSessions = ref(new RequestStatus());
+const creatingSession = ref(new RequestStatus());
+const deletingSession = ref(new RequestStatus());
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function shortId(id: string): string {
     return id.slice(-4);
@@ -106,20 +111,29 @@ async function loadClient() {
             clientInfo.value = data.data;
         }
     } catch {
-        // non-critical
+        // pass
     }
 }
 
 async function loadSessions() {
+    if (loadingSessions.value.loading) return;
+    loadingSessions.value.start();
+
     try {
-        const { data } = await api.GET("/clients/{addr}/sessions", { params: { path: { addr: props.addr } } });
+        const { data } = await withDeadline(
+            api.GET("/clients/{addr}/sessions", { params: { path: { addr: props.addr } } }),
+            10000,
+            "Load sessions timed out",
+        );
         if (data?.code === "success" && data.data) {
             const oldIds = new Set(sessions.value.map((s) => s.id));
             sessions.value = data.data;
+
             // auto-select first if none selected or active was removed
             if (!activeSessionId.value || !data.data.some((s) => s.id === activeSessionId.value)) {
                 activeSessionId.value = data.data[0]?.id ?? null;
             }
+
             // auto-select newly created sessions
             for (const s of data.data) {
                 if (!oldIds.has(s.id) && oldIds.size > 0) {
@@ -128,50 +142,70 @@ async function loadSessions() {
             }
         }
     } catch (e) {
-        error.value = String(e);
+        loadingSessions.value.error = String(e);
+    } finally {
+        loadingSessions.value.loading = false;
     }
 }
 
 async function createSession() {
-    creatingSession.value = true;
-    error.value = null;
+    if (creatingSession.value.loading) return;
+    creatingSession.value.start();
+
     try {
-        const { data } = await api.POST("/clients/{addr}/sessions", {
-            params: { path: { addr: props.addr } },
-            body: "terminal",
-        });
+        const { data } = await withDeadline(
+            api.POST("/clients/{addr}/sessions", {
+                params: { path: { addr: props.addr } },
+                body: "terminal",
+            }),
+            10000,
+            "Create session timed out",
+        );
         if (data?.code === "success" && data.data) {
             activeSessionId.value = data.data.id;
-            await loadSessions();
+
+            await withDeadline(loadSessions(), 5000);
         } else {
-            error.value = data?.error ?? "Failed to create session";
+            creatingSession.value.error = data?.error ?? "Failed to create session";
         }
     } catch (e) {
-        error.value = String(e);
+        creatingSession.value.error = String(e);
     } finally {
-        creatingSession.value = false;
+        creatingSession.value.loading = false;
     }
 }
 
 async function deleteSession(sessionId: string) {
+    deletingSession.value.start();
     try {
-        await api.DELETE("/clients/{addr}/sessions/{session_id}", {
-            params: { path: { addr: props.addr, session_id: sessionId } },
-        });
-        await loadSessions();
+        await withDeadline(
+            api.DELETE("/clients/{addr}/sessions/{session_id}", {
+                params: { path: { addr: props.addr, session_id: sessionId } },
+            }),
+            10000,
+            "Delete session timed out",
+        );
+        await withDeadline(loadSessions(), 5000, "Refresh sessions timed out");
     } catch (e) {
-        error.value = String(e);
+        deletingSession.value.error = String(e);
+    } finally {
+        deletingSession.value.loading = false;
     }
 }
 
 onMounted(async () => {
     await Promise.all([loadClient(), loadSessions()]);
-    loading.value = false;
-    pollTimer = setInterval(loadSessions, 5000);
+
+    if (!pollTimer) {
+        pollTimer = setInterval(loadSessions, 5000);
+    }
 });
 
 onUnmounted(() => {
-    clearInterval(pollTimer);
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
 });
 </script>
 

@@ -29,29 +29,6 @@ function setupTerminal() {
         convertEol: true,
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace',
-        theme: {
-            background: "#000000",
-            foreground: "#e6edf3",
-            cursor: "#58a6ff",
-            selectionBackground: "rgba(88, 166, 255, 0.3)",
-            black: "#484f58",
-            red: "#ff7b72",
-            green: "#3fb950",
-            yellow: "#d29922",
-            blue: "#58a6ff",
-            magenta: "#bc8cff",
-            cyan: "#39c5cf",
-            white: "#b1bac4",
-            brightBlack: "#6e7681",
-            brightRed: "#ffa198",
-            brightGreen: "#56d364",
-            brightYellow: "#e3b341",
-            brightBlue: "#79c0ff",
-            brightMagenta: "#d2a8ff",
-            brightCyan: "#56d4dd",
-            brightWhite: "#f0f6fc",
-        },
     });
 
     fitAddon = new FitAddon();
@@ -65,7 +42,7 @@ function setupTerminal() {
     terminal.onData((data: string) => {
         inputBuffer += data;
         if (sendTimer) clearTimeout(sendTimer);
-        sendTimer = setTimeout(flushInput, 16);
+        sendTimer = setTimeout(flushInput, 32);
     });
 
     // Observe resize
@@ -125,7 +102,7 @@ async function loadState() {
             terminal?.write(data.data.data);
         }
     } catch {
-        // non-critical
+        terminal?.write("\r\n\x1b[90m[failed to query current state]\x1b[0m\r\n");
     }
 }
 

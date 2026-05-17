@@ -197,41 +197,6 @@ impl AdminAPI {
         })
     }
 
-    /// Query the current state of an existing session of a specific client
-    #[oai(path = "/clients/:addr/sessions/:session_id/state", method = "get")]
-    async fn get_clients_addr_sessions_session_id_state(
-        &self,
-        addr: Path<String>,
-        session_id: Path<String>,
-        state: Data<&Arc<AdminAPIState>>,
-    ) -> schema::GetClientsAddrSessionsSessionIdStateResponse {
-        schema::GetClientsAddrSessionsSessionIdStateResponse::Ok(match session_id.0.try_into() {
-            Ok(session_id) => match state.server.upgrade() {
-                Some(server) => match addr.parse() {
-                    Ok(address) => match server
-                        .get_clients_addr_sessions_session_id_state(&address, session_id)
-                        .await
-                    {
-                        Ok(Some(state)) => schema::AdminResult::success(state),
-                        Ok(None) => {
-                            schema::AdminResult::error(schema::AdminResultCode::ClientNotFound)
-                        }
-                        Err(e) => schema::AdminResult::arbitrary_error(e),
-                    },
-                    Err(e) => schema::AdminResult::error_with_message(
-                        schema::AdminResultCode::InvalidInput,
-                        format!("Invalid address: {e}"),
-                    ),
-                },
-                None => schema::AdminResult::error(schema::AdminResultCode::DeadServer),
-            },
-            Err(e) => schema::AdminResult::error_with_message(
-                schema::AdminResultCode::InvalidInput,
-                format!("Invalid session ID: {e}"),
-            ),
-        })
-    }
-
     /// Listen for output from an existing session of a specific client
     #[oai(path = "/clients/:addr/sessions/:session_id/data", method = "get")]
     async fn get_clients_addr_sessions_session_id_data(
@@ -276,6 +241,41 @@ impl AdminAPI {
                     .boxed(),
             ),
             Err(err) => EventStream::new(once(async move { err.0 }).boxed()),
+        })
+    }
+
+    /// Query the current state of an existing session of a specific client
+    #[oai(path = "/clients/:addr/sessions/:session_id/state", method = "get")]
+    async fn get_clients_addr_sessions_session_id_state(
+        &self,
+        addr: Path<String>,
+        session_id: Path<String>,
+        state: Data<&Arc<AdminAPIState>>,
+    ) -> schema::GetClientsAddrSessionsSessionIdStateResponse {
+        schema::GetClientsAddrSessionsSessionIdStateResponse::Ok(match session_id.0.try_into() {
+            Ok(session_id) => match state.server.upgrade() {
+                Some(server) => match addr.parse() {
+                    Ok(address) => match server
+                        .get_clients_addr_sessions_session_id_state(&address, session_id)
+                        .await
+                    {
+                        Ok(Some(state)) => schema::AdminResult::success(state),
+                        Ok(None) => {
+                            schema::AdminResult::error(schema::AdminResultCode::ClientNotFound)
+                        }
+                        Err(e) => schema::AdminResult::arbitrary_error(e),
+                    },
+                    Err(e) => schema::AdminResult::error_with_message(
+                        schema::AdminResultCode::InvalidInput,
+                        format!("Invalid address: {e}"),
+                    ),
+                },
+                None => schema::AdminResult::error(schema::AdminResultCode::DeadServer),
+            },
+            Err(e) => schema::AdminResult::error_with_message(
+                schema::AdminResultCode::InvalidInput,
+                format!("Invalid session ID: {e}"),
+            ),
         })
     }
 }

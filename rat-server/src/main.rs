@@ -1,6 +1,5 @@
-use std::net::SocketAddrV4;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,11 +27,14 @@ async fn main() -> anyhow::Result<()> {
         request_timeout: Duration::from_millis(arguments.request_timeout),
         client_mpsc_channel_capacity: arguments.client_mpsc_channel_capacity,
         frontend_static_files: Arc::new(PathBuf::from(arguments.frontend_static_files)),
+        tls_cert_path: Arc::new(arguments.tls_cert_path),
+        tls_key_path: Arc::new(arguments.tls_key_path),
     };
 
+    let all_interfaces = Ipv4Addr::new(0, 0, 0, 0);
     let server = Server::bind(
-        SocketAddrV4::from_str(&arguments.admin_host)?,
-        SocketAddrV4::from_str(&arguments.cc_host)?,
+        SocketAddrV4::new(all_interfaces, arguments.admin_port),
+        SocketAddrV4::new(all_interfaces, arguments.cc_port),
         config,
     )
     .await?;

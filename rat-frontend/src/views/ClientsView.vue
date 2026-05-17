@@ -2,14 +2,14 @@
     <div class="clients-view">
         <div class="view-header">
             <h1>Clients</h1>
-            <button class="btn btn-ghost" @click="refresh" :disabled="loading">
-                {{ loading ? "Loading…" : "Refresh" }}
+            <button class="btn btn-ghost" @click="refresh" :disabled="status.loading">
+                {{ status.loading ? "Loading…" : "Refresh" }}
             </button>
         </div>
 
-        <div v-if="error" class="error-banner">{{ error }}</div>
+        <div v-if="status.error" class="error-banner">{{ status.error }}</div>
 
-        <div v-if="!loading && clients.length === 0" class="empty-state">
+        <div v-if="!status.loading && clients.length === 0" class="empty-state">
             No clients connected.
         </div>
 
@@ -48,39 +48,45 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { api } from "../api/client";
+import { RequestStatus, withDeadline } from "../utils/common";
 import type { components } from "../api/types";
 
 type ClientAPI = components["schemas"]["ClientAPI"];
 
 const clients = ref<ClientAPI[]>([]);
-const loading = ref(false);
-const error = ref<string | null>(null);
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+const status = ref(new RequestStatus());
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 async function refresh() {
-    loading.value = true;
-    error.value = null;
+    if (status.value.loading) return;
+    status.value.start();
+
     try {
-        const { data } = await api.GET("/clients");
+        const { data } = await withDeadline(api.GET("/clients"), 10000);
         if (data?.code === "success" && data.data) {
             clients.value = data.data;
         } else {
-            error.value = data?.error ?? "Failed to load clients";
+            status.value.error = data?.error ?? "Failed to load clients";
         }
     } catch (e) {
-        error.value = String(e);
+        status.value.error = String(e);
     } finally {
-        loading.value = false;
+        status.value.loading = false;
     }
 }
 
 onMounted(() => {
     refresh();
-    pollTimer = setInterval(refresh, 5000);
+    if (!pollTimer) {
+        pollTimer = setInterval(refresh, 5000);
+    }
 });
 
 onUnmounted(() => {
-    clearInterval(pollTimer);
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
 });
 </script>
 

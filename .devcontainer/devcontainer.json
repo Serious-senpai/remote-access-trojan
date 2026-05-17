@@ -15,13 +15,20 @@
                 "git.autorefresh": true,
                 "git.enabled": true,
                 "rust-analyzer.linkedProjects": [
-                    "${workspaceFolder}/Cargo.toml",
-                    "${workspaceFolder}/rat-driver/Cargo.toml",
-                    "${workspaceFolder}/rat-efi/Cargo.toml"
+                    // The first 2 crates should be developed in Windows only
+                    // "${workspaceFolder}/rat-driver/Cargo.toml",
+                    // "${workspaceFolder}/rat-efi/Cargo.toml",
+                    "${workspaceFolder}/Cargo.toml"
                 ],
                 "rust-analyzer.rustfmt.extraArgs": [
                     "+nightly-2026-05-01"
-                ]
+                ],
+                "[rust]": {
+                    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+                },
+                "[vue]": {
+                    "editor.defaultFormatter": "Vue.volar"
+                }
             }
         }
     },

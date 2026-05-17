@@ -24,11 +24,11 @@ impl Server {
     pub async fn bind(
         admin_addr: SocketAddrV4,
         cc_addr: SocketAddrV4,
-        cc_config: Config,
+        config: Config,
     ) -> anyhow::Result<Arc<Self>> {
-        let cc = CCServer::bind(cc_addr, cc_config.clone()).await?;
+        let cc = CCServer::bind(cc_addr, config.clone()).await?;
         Ok(Arc::new_cyclic(|this| {
-            let admin = AdminServer::bind(this.clone(), admin_addr, cc_config);
+            let admin = AdminServer::bind(this.clone(), admin_addr, config);
             Self {
                 _admin: admin.clone(),
                 _cc: cc.clone(),

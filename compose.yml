@@ -34,9 +34,11 @@ services:
     build:
       context: .
       target: server-runtime
-    command: [ "--log-path", "/client.log", "--admin-host", "0.0.0.0:12111" ]
+    command: [ "--log-path", "/client.log", "--admin-port", "12111" ]
     hostname: server
     image: rat-server
     ports:
       - "12110:12110"
       - "12111:12111"
+    volumes:
+      - ./certs:/certs

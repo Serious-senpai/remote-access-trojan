@@ -7,6 +7,7 @@ edition.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true, features = ["cargo", "derive", "error-context", "help", "usage"] }
+libc = { workspace = true }
 log = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
