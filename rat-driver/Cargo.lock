@@ -479,6 +479,11 @@ dependencies = [
 [[package]]
 name = "rat-common"
 version = "0.1.0"
+dependencies = [
+ "const_format",
+ "widestring",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "rat-driver"

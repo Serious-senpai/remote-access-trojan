@@ -80,8 +80,6 @@ fn entrypoint() -> uefi::Result<(), String> {
     bootmgfw::patch_bootmgfw(bootmgfw_buffer);
 
     info!("Starting bootmgfw_old.efi...");
-    countdown(3);
-
     boot::start_image(bootmgfw_handle).convert("Cannot start image")
 }
 
@@ -90,7 +88,7 @@ fn main() -> Status {
     match entrypoint() {
         Ok(()) => Status::SUCCESS,
         Err(e) => {
-            error!("UEFI application failed: {}", e.data());
+            error!("UEFI application error: {}", e.data());
             countdown(5);
             e.status()
         }

@@ -6,7 +6,7 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
-    command: bash -c "socat TCP-LISTEN:8000,fork,reuseaddr TCP:127.0.0.1:12111"
+    command: sleep infinity
     container_name: devcontainer
     environment:
       CARGO_TARGET_DIR: /target

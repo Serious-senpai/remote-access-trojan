@@ -24,29 +24,31 @@ use crate::sessions::SessionImpl;
 
 const _MAX_BUFFER_SIZE: usize = 2048;
 
+#[cfg(windows)]
 fn _build_default_shell() -> anyhow::Result<Command> {
-    #[cfg(windows)]
-    let mut command = Command::new("cmd.exe");
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    let mut command = Command::new("conhost.exe");
+    command.creation_flags(CREATE_NO_WINDOW);
 
-    #[cfg(unix)]
+    Ok(command)
+}
+
+#[cfg(unix)]
+fn _build_default_shell() -> anyhow::Result<Command> {
+    use std::io::Error;
+
     let mut command = Command::new("/bin/bash");
-
-    #[cfg(unix)]
-    {
-        command.arg("-i");
+    command.arg("-i").env("TERM", "xterm");
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
     }
-
-    command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
 
     Ok(command)
 }
@@ -65,6 +67,12 @@ pub struct TerminalSession {
 impl TerminalSession {
     pub async fn new(client: Weak<Client>) -> anyhow::Result<Self> {
         let mut command = _build_default_shell()?;
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
         let mut process = command.spawn()?;
 
         let stdin = process
@@ -138,7 +146,7 @@ impl ModuleImpl for TerminalSession {
         if let Some(client) = self._client.upgrade() {
             match &event {
                 SessionOutput::TerminalClosed(_) => {
-                    // Do not early return here, as we still want to send the closed message to the server
+                    // Do not return early here, as we still want to send the closed message to the server
                     self.stop();
                 }
                 SessionOutput::TerminalStdout(SessionOutputTerminalStdout { data })
@@ -186,6 +194,22 @@ impl SessionImpl for TerminalSession {
             SessionInput::TerminalStdin(SessionInputTerminalStdin { data }) => {
                 let mut stdin = self._input.lock().await;
                 stdin.write_all(data.as_bytes()).await?;
+
+                // cmd.exe does not echo input like bash does, so we echo it manually here.
+                // #[cfg(windows)]
+                // if let Some(client) = self._client.upgrade() {
+                //     client
+                //         .send(&ClientMessage {
+                //             id: SnowflakeId::new(),
+                //             data: ClientMessageData::SessionOutput {
+                //                 session_id: self._metadata.id,
+                //                 output: SessionOutput::TerminalStderr(
+                //                     SessionOutputTerminalStderr { data },
+                //                 ),
+                //             },
+                //         })
+                //         .await?;
+                // }
             }
             SessionInput::Close(_) => {
                 self._process.lock().await.kill().await?;

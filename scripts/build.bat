@@ -5,7 +5,7 @@ echo Found repository root: %root%
 set current=%cd%
 
 set profile=%~1
-if "%profile%"=="" set profile=release
+if "%profile%"=="" set profile=dev
 echo Building with profile "%profile%"
 
 cd /d %root%

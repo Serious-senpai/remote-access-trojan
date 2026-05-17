@@ -47,4 +47,4 @@ FROM scratch AS server-runtime
 
 COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-server /rat-server
 COPY --from=node-builder /app/dist /frontend
-ENTRYPOINT [ "/rat-server", "--frontend-static-files", "/frontend" ]
+ENTRYPOINT [ "/rat-server", "--frontend-static-files", "/frontend", "--tls-cert-path", "/certs/cert.pem", "--tls-key-path", "/certs/cert.key.pem" ]

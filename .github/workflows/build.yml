@@ -63,19 +63,24 @@ jobs:
       - name: Build Docker images
         run: docker compose build
 
-      - name: Extract Linux executables
+      - name: Extract build artifacts
         run: |
           mkdir -p build
 
           docker create --name temp rat-alpine-client
           docker cp temp:/rat-client build/rat-client
           docker rm temp
-          ldd build/rat-client
 
           docker create --name temp rat-server
           docker cp temp:/rat-server build/rat-server
+          docker cp temp:/frontend build/frontend
           docker rm temp
-          ldd build/rat-server
+
+      - name: Check rat-client dependencies
+        run: ldd build/rat-client
+
+      - name: Check rat-server dependencies
+        run: ldd build/rat-server
 
       - name: Save Docker images
         run: |
@@ -86,6 +91,12 @@ jobs:
           docker save -o build/debian-client.tar rat-debian-client
           docker save -o build/ubuntu-client.tar rat-ubuntu-client
           docker save -o build/server.tar rat-server
+
+      - name: Upload frontend files
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend
+          path: build/frontend
 
       - name: Upload Linux executables
         uses: actions/upload-artifact@v7

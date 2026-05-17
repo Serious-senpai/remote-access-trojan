@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
 use rat_common::schema::{
@@ -70,7 +70,7 @@ impl Client {
         self: Arc<Self>,
         message: ServerMessage,
     ) -> anyhow::Result<ClientMessage> {
-        println!("Received message from server: {message:#?}");
+        debug!("Received message from server: {message:#?}");
         let id = message.id;
         match message.data {
             ServerMessageData::Ping => Ok(ClientMessage {
@@ -96,20 +96,18 @@ impl Client {
                     },
                 },
             }),
-            ServerMessageData::SessionQuery => {
-                let sessions = self
-                    ._sessions
-                    .lock()
-                    .await
-                    .values()
-                    .map(|s| s.metadata())
-                    .collect();
-
-                Ok(ClientMessage {
-                    id,
-                    data: ClientMessageData::SessionQueryResponse { sessions },
-                })
-            }
+            ServerMessageData::SessionQuery => Ok(ClientMessage {
+                id,
+                data: ClientMessageData::SessionQueryResponse {
+                    sessions: self
+                        ._sessions
+                        .lock()
+                        .await
+                        .values()
+                        .map(|s| s.metadata())
+                        .collect(),
+                },
+            }),
             ServerMessageData::SessionCreate { request } => {
                 let mut sessions = self._sessions.lock().await;
                 let session = match request {
@@ -229,29 +227,33 @@ impl ModuleImpl for Client {
                 let mut frame = total_read_buf.drain(..=offset).collect::<Vec<u8>>();
                 offset = 0;
 
-                match postcard::from_bytes_cobs::<ServerMessage>(&mut frame) {
-                    Ok(message) => {
-                        let id = message.id;
-                        match self.clone()._process_message(message).await {
-                            Ok(response) => {
-                                self.send(&response).await?;
-                            }
-                            Err(e) => {
-                                error!("Error processing message from server: {e}");
-                                self.send(&ClientMessage {
-                                    id,
-                                    data: ClientMessageData::Error {
-                                        message: e.to_string(),
-                                    },
-                                })
-                                .await?;
+                let self_c = self.clone();
+                tokio::spawn(async move {
+                    match postcard::from_bytes_cobs::<ServerMessage>(&mut frame) {
+                        Ok(message) => {
+                            let id = message.id;
+                            match self_c.clone()._process_message(message).await {
+                                Ok(response) => {
+                                    let _ = self_c.send(&response).await;
+                                }
+                                Err(e) => {
+                                    error!("Error processing message from server: {e}");
+                                    let _ = self_c
+                                        .send(&ClientMessage {
+                                            id,
+                                            data: ClientMessageData::Error {
+                                                message: e.to_string(),
+                                            },
+                                        })
+                                        .await;
+                                }
                             }
                         }
+                        Err(e) => {
+                            error!("Received malformed message from server: {frame:02X?} ({e})");
+                        }
                     }
-                    Err(e) => {
-                        error!("Received malformed message from server: {e}");
-                    }
-                }
+                });
             } else {
                 offset += 1;
             }

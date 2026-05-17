@@ -1,7 +1,7 @@
 <template>
     <div id="app-shell">
         <header class="app-header">
-            <router-link to="/" class="logo">RAT Control Panel</router-link>
+            <router-link to="/" class="logo">Operator Control Panel</router-link>
         </header>
         <main class="app-main">
             <router-view />

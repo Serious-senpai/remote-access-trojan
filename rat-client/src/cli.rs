@@ -25,6 +25,7 @@ pub struct Arguments {
     pub log_path: PathBuf,
 
     /// Enable interaction with Windows Service Control Manager (SCM)
+    #[cfg(windows)]
     #[arg(long)]
     pub scm: bool,
 }

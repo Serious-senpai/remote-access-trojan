@@ -1,6 +1,10 @@
 /.github/
 /.vscode/
-/target/
+/certs/
+/esp/
+
+**/node_modules/
+**/target/
 
 **/compose.yml
 **/Dockerfile

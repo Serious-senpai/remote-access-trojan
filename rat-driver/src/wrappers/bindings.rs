@@ -1,8 +1,24 @@
 use core::ptr;
 
 use wdk_sys::{
-    HANDLE, OBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES, PSECURITY_DESCRIPTOR, PUNICODE_STRING, ULONG,
+    HANDLE, OBJECT_ATTRIBUTES, PIO_STACK_LOCATION, PIRP, POBJECT_ATTRIBUTES, PSECURITY_DESCRIPTOR,
+    PUNICODE_STRING, ULONG,
 };
+
+/// # Safety
+/// Binding to [`IoGetCurrentIrpStackLocation`](https://codemachine.com/downloads/win71/wdm.h)
+#[allow(non_snake_case)]
+pub unsafe fn IoGetCurrentIrpStackLocation(irp: PIRP) -> PIO_STACK_LOCATION {
+    unsafe {
+        debug_assert!((*irp).CurrentLocation <= (*irp).StackCount + 1);
+        (*irp)
+            .Tail
+            .Overlay
+            .__bindgen_anon_2
+            .__bindgen_anon_1
+            .CurrentStackLocation
+    }
+}
 
 #[allow(non_snake_case)]
 pub unsafe fn InitializeObjectAttributes(
