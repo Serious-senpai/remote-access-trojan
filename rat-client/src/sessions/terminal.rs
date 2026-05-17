@@ -39,7 +39,7 @@ fn _build_default_shell() -> anyhow::Result<Command> {
     use std::io::Error;
 
     let mut command = Command::new("/bin/bash");
-    command.arg("-i");
+    command.arg("-i").env("TERM", "xterm");
     unsafe {
         command.pre_exec(|| {
             if libc::setsid() == -1 {

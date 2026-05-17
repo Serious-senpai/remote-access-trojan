@@ -11,3 +11,7 @@ A Remote Access Trojan (RAT) with UEFI persistence.
 - OpenAPI-based management API, easily integrated with another web frontend.
 - Kernel-mode self-defense (Windows only).
 - Survive OS reinstall (but not hard-disk wipe, Windows only).
+
+Because the trojan is executed as a Windows service, we automatically got a remote shell as *NT Authority\System*:
+
+![windows-system.png](assets/windows-system.png)
