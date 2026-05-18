@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::ptr;
 
 use wdk_sys::{
@@ -35,5 +36,11 @@ pub unsafe fn InitializeObjectAttributes(
         (*p).ObjectName = n;
         (*p).SecurityDescriptor = s;
         (*p).SecurityQualityOfService = ptr::null_mut();
+    }
+}
+
+pub fn debug_break() -> ! {
+    unsafe {
+        asm!("int3", options(noreturn));
     }
 }

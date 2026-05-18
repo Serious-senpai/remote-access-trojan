@@ -53,5 +53,3 @@ pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::ne
 pub static CM_REGISTER_CALLBACK_COOKIE: AtomicI64 = AtomicI64::new(0);
 
 pub static ORIGINAL_DRIVER_OBJECT: AtomicPtr<DRIVER_OBJECT> = AtomicPtr::new(ptr::null_mut());
-pub static ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
-pub static ORIGINAL_DRIVER_ENTRY_COMPLETED: AtomicBool = AtomicBool::new(false);

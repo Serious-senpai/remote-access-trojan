@@ -8,6 +8,7 @@ mod global;
 mod handlers;
 mod logger;
 mod string;
+mod threads;
 mod wrappers;
 
 use core::{mem, slice};

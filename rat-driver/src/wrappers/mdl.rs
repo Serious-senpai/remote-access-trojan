@@ -58,6 +58,10 @@ impl MdlGuard {
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self._mapped_address.cast(), self._len as usize) }
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self._mapped_address.cast(), self._len as usize) }
+    }
 }
 
 impl Drop for MdlGuard {
