@@ -120,7 +120,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             Some(threads::disable_kpp::disable_kpp_thread_routine),
-            ptr::null_mut(),
+            Box::into_raw(Box::new(*extra)).cast(),
         )
     };
     anyhow::ensure!(

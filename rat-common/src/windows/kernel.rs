@@ -9,4 +9,5 @@ pub struct InstructionRecoveryInfo {
 pub struct KernelHandoff {
     pub driver_entry: InstructionRecoveryInfo,
     pub mm_verify_callback_function_check_flags: InstructionRecoveryInfo,
+    pub ke_bug_check_ex: InstructionRecoveryInfo,
 }

