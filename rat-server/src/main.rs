@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
         frontend_static_files: Arc::new(arguments.frontend_static_files),
         tls_cert_path: Arc::new(arguments.tls_cert_path),
         tls_key_path: Arc::new(arguments.tls_key_path),
+        tls_client_trust_anchor: Arc::new(arguments.tls_client_trust_anchor),
     };
 
     let all_interfaces = Ipv4Addr::new(0, 0, 0, 0);

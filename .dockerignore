@@ -1,7 +1,6 @@
 /.github/
 /.vscode/
 /certs/
-/esp/
 
 **/node_modules/
 **/target/

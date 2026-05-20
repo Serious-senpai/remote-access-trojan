@@ -10,4 +10,5 @@ pub struct Config {
     pub frontend_static_files: Arc<PathBuf>,
     pub tls_cert_path: Arc<PathBuf>,
     pub tls_key_path: Arc<PathBuf>,
+    pub tls_client_trust_anchor: Arc<PathBuf>,
 }

@@ -50,4 +50,8 @@ pub struct Arguments {
     /// Path to the TLS private key file in PEM format.
     #[arg(long, default_value = "certs/cert.key.pem")]
     pub tls_key_path: PathBuf,
+
+    /// Path to the TLS client trust anchor file in PEM format. This is used to verify client certificates.
+    #[arg(long, default_value = "certs/root-ca.pem")]
+    pub tls_client_trust_anchor: PathBuf,
 }

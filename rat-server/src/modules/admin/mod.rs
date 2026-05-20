@@ -51,7 +51,10 @@ impl AdminServer {
     {
         let cert = fs::read(self._config.tls_cert_path.as_ref()).await?;
         let key = fs::read(self._config.tls_key_path.as_ref()).await?;
-        let config = RustlsConfig::new().fallback(RustlsCertificate::new().cert(cert).key(key));
+        let root_ca = fs::read(self._config.tls_client_trust_anchor.as_ref()).await?;
+        let config = RustlsConfig::new()
+            .fallback(RustlsCertificate::new().cert(cert).key(key))
+            .client_auth_required(root_ca);
 
         Ok(listener.rustls(config))
     }
