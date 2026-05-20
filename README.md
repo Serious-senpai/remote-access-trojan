@@ -17,7 +17,8 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 - Kernel-mode self-defense: prevent registry modification, process termination.
 - Survive OS reinstall (but not hard-disk wipe unfortunately).
 - Bypass [KPP](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) (aka. PatchGuard).
-    - Originally, the plan to bypass PatchGuard was inspired by [this article](http://uninformed.org/index.cgi?v=3&a=3&p=17). However, it seems like before calling `KeBugCheckEx`, the `StartAddress` field of the current [`ETHREAD`](https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm) was zeroed out (whether intentionally or not). Therefore, we simply ignore PatchGuard by sleeping indefinitely in the `KeBugCheckEx` thread.
+    - Originally, the plan to bypass PatchGuard was inspired by [this article](http://uninformed.org/index.cgi?v=3&a=3&p=17). However, it seems like before calling `KeBugCheckEx`, the `StartAddress` field of the current [`ETHREAD`](https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm) was zeroed out (whether intentionally or not). Therefore, we simply ignore PatchGuard by sleeping infinitely in the `KeBugCheckEx` thread.
+    - Keep in mind that this approach may fail if you patch directly in kernel-mode. Even if an inline hook is successfully placed at the `KeBugCheckEx` prologue, PatchGuard will overwrite it with the original instructions before execution. We solved this by moving our patch to *winload.efi*. Because this happens before `KiSystemStartup` is called, we can safely modify the routine before PatchGuard is initialized, effectively tricking it into accepting our modified code as the original baseline.
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
 
