@@ -16,12 +16,14 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 
 - Kernel-mode self-defense: prevent registry modification, process termination.
 - Survive OS reinstall (but not hard-disk wipe unfortunately).
+- Bypass [KPP](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) (aka. PatchGuard).
+    - Originally, the plan to bypass PatchGuard was inspired by [this article](http://uninformed.org/index.cgi?v=3&a=3&p=17). However, it seems like before calling `KeBugCheckEx`, the `StartAddress` field of the current [`ETHREAD`](https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ps/ethread/index.htm) was zeroed out (whether intentionally or not). Therefore, we simply ignore PatchGuard by sleeping indefinitely in the `KeBugCheckEx` thread.
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
 
 ![windows-system.png](assets/windows-system.png)
 
-Of course, the self-defense feature can prevent user-mode processes from terminating our malware, even when we are already *NT Authority\System*.
+Of course, the self-defense feature can prevent user-mode processes from terminating our malware, even when we are already *System*.
 
 ![windows-self-defense.png](assets/windows-self-defense.png)
 
@@ -29,5 +31,4 @@ Of course, the self-defense feature can prevent user-mode processes from termina
 
 ### Windows-only
 
-- The object callback registered by [`ObRegisterCallbacks`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-obregistercallbacks) is causing [KPP](https://en.wikipedia.org/wiki/Kernel_Patch_Protection) to crash down the system.
-    - TODO: Implement `KeBugCheckEx` hook to restore the crashing thread to the initial state, as described [here](http://uninformed.org/index.cgi?v=3&a=3&p=17).
+- Cannot bypass UEFI Secure Boot yet.

