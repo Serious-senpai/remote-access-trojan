@@ -8,5 +8,5 @@ pub struct InstructionRecoveryInfo {
 #[derive(Debug, Clone, Copy)]
 pub struct KernelHandoff {
     pub driver_entry: InstructionRecoveryInfo,
-    pub mm_verify_callback_function_check_flags: InstructionRecoveryInfo,
+    pub object_callback_trampoline: *const u8,
 }

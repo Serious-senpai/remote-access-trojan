@@ -37,3 +37,9 @@ pub unsafe fn InitializeObjectAttributes(
         (*p).SecurityQualityOfService = ptr::null_mut();
     }
 }
+
+// pub fn debug_break() -> ! {
+//     unsafe {
+//         asm!("int3", options(noreturn));
+//     }
+// }
