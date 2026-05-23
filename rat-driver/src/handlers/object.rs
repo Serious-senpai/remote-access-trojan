@@ -21,7 +21,6 @@ use widestring::U16Str;
 
 use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_ACTIVATED};
 use crate::info;
-use crate::wrappers::mdl::MdlGuard;
 
 pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void> {
     let mut altitude = UNICODE_STRING::default();
@@ -32,7 +31,12 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
     let mut object_operations = [OB_OPERATION_REGISTRATION {
         ObjectType: unsafe { PsProcessType },
         Operations: OB_OPERATION_HANDLE_CREATE,
-        PreOperation: Some(process_preop_callback),
+        PreOperation: Some(unsafe {
+            mem::transmute::<
+                *const u8,
+                unsafe extern "C" fn(*mut c_void, *mut OB_PRE_OPERATION_INFORMATION) -> i32,
+            >(extra.object_callback_trampoline)
+        }),
         PostOperation: None,
     }];
 
@@ -51,26 +55,10 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
         "ObRegisterCallbacks error: 0x{status:X}",
     );
 
-    let recovery = &extra.mm_verify_callback_function_check_flags;
-    match unsafe { MdlGuard::new(recovery.address.cast(), recovery.instructions_len as u32) } {
-        Ok(mut mdl) => {
-            mdl.as_mut_slice().copy_from_slice(unsafe {
-                slice::from_raw_parts(recovery.instructions, recovery.instructions_len)
-            });
-
-            info!(
-                "Recovered MmVerifyCallbackFunctionCheckFlags at {:p}",
-                recovery.address,
-            );
-        }
-        Err(e) => {
-            anyhow::bail!("Failed to recover MmVerifyCallbackFunctionCheckFlags: {e}");
-        }
-    }
-
     Ok(handle)
 }
 
+#[unsafe(no_mangle)]
 unsafe extern "C" fn process_preop_callback(
     _: *mut c_void,
     info: *mut OB_PRE_OPERATION_INFORMATION,

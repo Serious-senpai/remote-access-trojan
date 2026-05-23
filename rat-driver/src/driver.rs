@@ -112,22 +112,6 @@ pub fn driver_entry_prehook(
         "PsCreateSystemThread error (initialize_thread_routine): 0x{status:X}",
     );
 
-    let status = unsafe {
-        PsCreateSystemThread(
-            &mut thread,
-            THREAD_ALL_ACCESS,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            Some(threads::disable_kpp::disable_kpp_thread_routine),
-            Box::into_raw(Box::new(*extra)).cast(),
-        )
-    };
-    anyhow::ensure!(
-        nt_success(status),
-        "PsCreateSystemThread error (disable_kpp_thread_routine): 0x{status:X}",
-    );
-
     Ok(())
 }
 

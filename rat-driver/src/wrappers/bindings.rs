@@ -1,4 +1,3 @@
-use core::arch::asm;
 use core::ptr;
 
 use wdk_sys::{
@@ -39,8 +38,8 @@ pub unsafe fn InitializeObjectAttributes(
     }
 }
 
-pub fn debug_break() -> ! {
-    unsafe {
-        asm!("int3", options(noreturn));
-    }
-}
+// pub fn debug_break() -> ! {
+//     unsafe {
+//         asm!("int3", options(noreturn));
+//     }
+// }

@@ -118,6 +118,75 @@ pub unsafe fn iterate_sections_disk(
 //     }
 // }
 
+unsafe fn iterate_sections_mem_impl(
+    image: &[u8],
+    mut callback: impl FnMut(IMAGE_SECTION_HEADER, *const u8, usize),
+) {
+    debug!("Iterating sections of PE image (size=0x{:X})", image.len());
+    let nt_headers = unsafe { get_nt_headers(image.as_ptr()) };
+    let nt_headers_offset = unsafe { nt_headers.cast::<u8>().offset_from(image.as_ptr()) } as usize;
+
+    if let Some(nt_headers) = unsafe { nt_headers.as_ref() } {
+        let section_headers_offset = nt_headers_offset
+            + mem::size_of_val(&nt_headers.Signature)
+            + mem::size_of_val(&nt_headers.FileHeader)
+            + usize::from(nt_headers.FileHeader.SizeOfOptionalHeader);
+
+        let num_sections = usize::from(nt_headers.FileHeader.NumberOfSections);
+        let section_size = mem::size_of::<IMAGE_SECTION_HEADER>();
+        debug!("Number of sections: {num_sections}, section_size=0x{section_size:X}");
+
+        for i in 0..num_sections {
+            let section_offset = section_headers_offset + i * section_size;
+            if section_offset + section_size > image.len() {
+                debug!(
+                    "Section header #{}/{num_sections} is out of bounds (offset=0x{section_offset:X})",
+                    i + 1
+                );
+                break;
+            }
+
+            match unsafe {
+                image
+                    .as_ptr()
+                    .byte_add(section_offset)
+                    .cast::<IMAGE_SECTION_HEADER>()
+                    .as_ref()
+            } {
+                Some(header) => {
+                    let offset = header.VirtualAddress as usize;
+                    let size = unsafe { header.Misc.VirtualSize } as usize;
+                    let name = CStr::from_bytes_until_nul(&header.Name);
+                    debug!(
+                        "Section {name:?}: VirtualAddress=0x{offset:X}, SizeOfRawData=0x{:X}, VirtualSize=0x{:X}",
+                        header.SizeOfRawData,
+                        unsafe { header.Misc.VirtualSize },
+                    );
+                    if offset + size <= image.len() {
+                        callback(*header, unsafe { image.as_ptr().byte_add(offset) }, size);
+                    } else {
+                        warn!("Section {name:?} is out of bounds");
+                    }
+                }
+                None => {
+                    warn!("Failed to read section header #{}/{}", i + 1, num_sections);
+                }
+            }
+        }
+    }
+}
+
+pub unsafe fn iterate_sections_mem_mut(
+    image: &mut [u8],
+    mut callback: impl FnMut(IMAGE_SECTION_HEADER, &mut [u8]),
+) {
+    unsafe {
+        iterate_sections_mem_impl(image, |header, ptr, len| {
+            callback(header, slice::from_raw_parts_mut(ptr as *mut u8, len))
+        });
+    }
+}
+
 unsafe fn iterate_export_address_table_impl(image: &[u8], mut callback: impl FnMut(&CStr, u32)) {
     if let Some(nt_headers) = unsafe { get_nt_headers(image.as_ptr()).as_ref() } {
         let export_dir =
