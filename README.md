@@ -14,8 +14,9 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 
 ### Windows-only
 
-- Kernel-mode self-defense: prevent registry modification, process termination.
+- Kernel-mode self-defense: preventing process termination.
 - Survive OS reinstall (but not hard-disk wipe unfortunately).
+- Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
 
