@@ -207,6 +207,8 @@ impl AdminAPI {
     ) -> schema::GetClientsAddrSessionsSessionIdDataResponse<
         BoxStream<'static, schema::AdminResult<SessionOutput>>,
     > {
+        // FIXME: When the mpsc channel is closed, the SSE stream is still open (observed from browser devtools)
+        // Reproduce: Frontend creates a session, then terminates the rat-client. Notice that no error is shown in frontend.
         let stream = match session_id.0.try_into() {
             Ok(session_id) => match state.server.upgrade() {
                 Some(server) => match addr.parse() {
