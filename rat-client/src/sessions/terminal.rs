@@ -29,7 +29,9 @@ fn _build_default_shell() -> anyhow::Result<Command> {
     use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
     let mut command = Command::new("conhost.exe");
-    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .args(["--width", "200", "--height", "9999"])
+        .creation_flags(CREATE_NO_WINDOW);
 
     Ok(command)
 }
