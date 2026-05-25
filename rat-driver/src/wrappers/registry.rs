@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 
-use wdk_sys::ntddk::{RtlInitUnicodeString, ZwSetValueKey};
+use wdk_sys::ntddk::{RtlInitUnicodeString, ZwDeleteValueKey, ZwSetValueKey};
 use wdk_sys::{HANDLE, NTSTATUS, REG_DWORD, ULONG, UNICODE_STRING};
 use widestring::U16CStr;
 
@@ -44,5 +44,13 @@ pub fn registry_write_string(
             u_value.Buffer as *mut c_void,
             data_size,
         )
+    }
+}
+
+pub fn registry_delete_value(key: HANDLE, name: &U16CStr) -> NTSTATUS {
+    let mut u_name = UNICODE_STRING::default();
+    unsafe {
+        RtlInitUnicodeString(&mut u_name, name.as_ptr());
+        ZwDeleteValueKey(key, &mut u_name)
     }
 }

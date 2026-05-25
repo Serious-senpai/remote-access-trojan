@@ -111,6 +111,8 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
         anyhow::ensure!(nt_success(status), "ZwSetValueKey error: 0x{status:X}");
     }
 
+    let _ = registry::registry_delete_value(key, u16cstr!("DeleteFlag"));
+
     drop(guard);
     Ok(())
 }
