@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::{debug, error};
+use log::{debug, error, warn};
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
 use rat_common::schema::{
@@ -13,7 +13,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
-use tokio::time::timeout;
+use tokio::time::{self, timeout};
 
 use crate::config::Config;
 use crate::modules::cc::listener::{ClientOnceListener, ClientPersistentListener};
@@ -152,18 +152,27 @@ impl ClientConnector {
         receiver
     }
 
-    pub async fn update_system_info(&self) -> anyhow::Result<()> {
-        let response = self
-            .request(&ServerMessage::new(ServerMessageData::SystemInfoQuery))
-            .await?;
+    pub async fn update_system_info(&self) {
+        while ModuleImpl::is_running(self) {
+            match self
+                .request(&ServerMessage::new(ServerMessageData::SystemInfoQuery))
+                .await
+            {
+                Ok(response) => {
+                    if let ClientMessageData::SystemInfoQueryResponse { info } = response.data {
+                        self._info.write().await.replace(info);
+                        return;
+                    } else {
+                        warn!("Unexpected response to system info query: {response:?}");
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to query system info from {}: {e}", self._peer);
+                }
+            }
 
-        if let ClientMessageData::SystemInfoQueryResponse { info } = response.data {
-            self._info.write().await.replace(info);
-        } else {
-            anyhow::bail!("Unexpected response to system info query: {response:?}");
+            time::sleep(self._config.heartbeat_interval).await;
         }
-
-        Ok(())
     }
 }
 

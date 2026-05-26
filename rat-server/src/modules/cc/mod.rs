@@ -258,7 +258,7 @@ impl ModuleImpl for CCServer {
 
             debug!("Accepted new connection from {addr}");
 
-            client.update_system_info().await?;
+            tokio::spawn(async move { client.update_system_info().await });
         } else {
             warn!("Client {addr} is trying to connect more than once. Ignoring.");
         }
