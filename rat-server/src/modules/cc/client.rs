@@ -99,7 +99,21 @@ impl ClientConnector {
     pub async fn send(&self, message: &ServerMessage) -> anyhow::Result<()> {
         let data = postcard::to_stdvec_cobs(message)?;
         let mut writer = self._writer.lock().await;
-        writer.write_all(&data).await?;
+        match timeout(self._config.request_timeout, writer.write_all(&data)).await {
+            Ok(Err(e)) => {
+                anyhow::bail!("Failed to send message to {}: {e}", self._peer);
+            }
+            Err(_) => {
+                anyhow::bail!(
+                    "Timed out when sending message to {} after {}s.",
+                    self._peer,
+                    self._config.request_timeout.as_secs(),
+                );
+            }
+            _ => {
+                // pass
+            }
+        }
         Ok(())
     }
 
@@ -107,10 +121,15 @@ impl ClientConnector {
         let id = request.id;
         let waiter = async move { self.wait_for(move |m| m.id == id).await };
 
-        self.send(request).await?;
-        match timeout(self._config.request_timeout, waiter).await {
+        let (response, _) =
+            tokio::join!(biased; timeout(self._config.request_timeout, waiter), self.send(request));
+
+        match response {
             Ok(Ok(response)) => Ok(response),
-            _ => {
+            Ok(Err(e)) => {
+                anyhow::bail!("Failed to receive response from {}: {e}", self._peer);
+            }
+            Err(_) => {
                 anyhow::bail!(
                     "Request {request:?} timed out to {} after {}s.",
                     self._peer,
