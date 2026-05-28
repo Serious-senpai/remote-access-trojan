@@ -3,19 +3,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::{debug, error, warn};
+use log::{debug, error};
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
 use rat_common::reader::Reader;
-use rat_common::schema::{
-    ClientMessage, ClientMessageData, ServerMessage, ServerMessageData, SystemInfo,
-};
+use rat_common::schema::{ClientMessage, ServerMessage, SystemInfo};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
-use tokio::time::{self, timeout};
+use tokio::time;
 
 use crate::config::Config;
+use crate::modules::cc::info::ClientInfo;
 use crate::modules::cc::listener::{ClientOnceListener, ClientPersistentListener};
 use crate::modules::cc::ping::ClientPing;
 
@@ -45,16 +44,19 @@ impl ClientConnector {
             _once_listeners: Mutex::new(LinkedList::new()),
             _persistent_listeners: Mutex::new(LinkedList::new()),
             _total_read_buf: Mutex::new(VecDeque::new()),
-            _state: ModuleState::new_with_submodules(vec![Arc::new(ClientPing::new(
-                peer,
-                this.clone(),
-                config,
-            ))]),
+            _state: ModuleState::new_with_submodules(vec![
+                Arc::new(ClientInfo::new(peer, this.clone(), config.clone())),
+                Arc::new(ClientPing::new(peer, this.clone(), config)),
+            ]),
         })
     }
 
     pub async fn info(&self) -> Option<SystemInfo> {
         self._info.read().await.clone()
+    }
+
+    pub async fn update_info(&self, info: SystemInfo) {
+        self._info.write().await.replace(info);
     }
 
     async fn _process_message(&self, message: ClientMessage) -> anyhow::Result<()> {
@@ -96,24 +98,10 @@ impl ClientConnector {
         Ok(())
     }
 
-    pub async fn send(&self, message: &ServerMessage) -> anyhow::Result<()> {
+    async fn _send(&self, message: &ServerMessage) -> anyhow::Result<()> {
         let data = postcard::to_stdvec_cobs(message)?;
         let mut writer = self._writer.lock().await;
-        match timeout(self._config.request_timeout, writer.write_all(&data)).await {
-            Ok(Err(e)) => {
-                anyhow::bail!("Failed to send message to {}: {e}", self._peer);
-            }
-            Err(_) => {
-                anyhow::bail!(
-                    "Timed out when sending message to {} after {}s.",
-                    self._peer,
-                    self._config.request_timeout.as_secs(),
-                );
-            }
-            _ => {
-                // pass
-            }
-        }
+        writer.write_all(&data).await?;
         Ok(())
     }
 
@@ -121,20 +109,22 @@ impl ClientConnector {
         let id = request.id;
         let waiter = async move { self.wait_for(move |m| m.id == id).await };
 
-        let (response, _) =
-            tokio::join!(biased; timeout(self._config.request_timeout, waiter), self.send(request));
+        let result = tokio::try_join!(
+            biased;
+            time::timeout(self._config.request_timeout, waiter),
+            time::timeout(self._config.request_timeout, self._send(request)),
+        );
 
-        match response {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(e)) => {
-                anyhow::bail!("Failed to receive response from {}: {e}", self._peer);
+        match result {
+            Ok((receive, send)) => {
+                if let Err(e) = send {
+                    anyhow::bail!("Failed to send {request:?} to {}: {e}", self._peer);
+                }
+
+                receive
             }
             Err(_) => {
-                anyhow::bail!(
-                    "Request {request:?} timed out to {} after {}s.",
-                    self._peer,
-                    self._config.request_timeout.as_secs(),
-                )
+                anyhow::bail!("Request {request:?} timed out to {}", self._peer);
             }
         }
     }
@@ -170,28 +160,11 @@ impl ClientConnector {
 
         receiver
     }
+}
 
-    pub async fn update_system_info(&self) {
-        while ModuleImpl::is_running(self) {
-            match self
-                .request(&ServerMessage::new(ServerMessageData::SystemInfoQuery))
-                .await
-            {
-                Ok(response) => {
-                    if let ClientMessageData::SystemInfoQueryResponse { info } = response.data {
-                        self._info.write().await.replace(info);
-                        return;
-                    } else {
-                        warn!("Unexpected response to system info query: {response:?}");
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to query system info from {}: {e}", self._peer);
-                }
-            }
-
-            time::sleep(self._config.heartbeat_interval).await;
-        }
+impl Drop for ClientConnector {
+    fn drop(&mut self) {
+        debug!("Dropping module {}", self._name);
     }
 }
 

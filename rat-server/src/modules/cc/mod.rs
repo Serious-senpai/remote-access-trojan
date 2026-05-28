@@ -1,4 +1,5 @@
 mod client;
+mod info;
 mod listener;
 mod ping;
 
@@ -257,8 +258,6 @@ impl ModuleImpl for CCServer {
             e.insert(client.clone());
 
             debug!("Accepted new connection from {addr}");
-
-            tokio::spawn(async move { client.update_system_info().await });
         } else {
             warn!("Client {addr} is trying to connect more than once. Ignoring.");
         }

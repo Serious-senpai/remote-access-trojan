@@ -30,7 +30,7 @@ pub struct Arguments {
     #[arg(long, default_value_t = 25000)]
     pub heartbeat_interval: u64,
 
-    /// Server-to-client request timeout in milliseconds.
+    /// Server-to-client request timeout in milliseconds. Set to 0 to disable timeouts.
     #[arg(long, default_value_t = 5000)]
     pub request_timeout: u64,
 
