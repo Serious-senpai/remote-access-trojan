@@ -15,7 +15,7 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 ### Windows-only
 
 - Kernel-mode self-defense: preventing process termination.
-- Survive OS reinstall (but not hard-disk wipe unfortunately, but who would wipe out their ESP anyway?).
+- Survive OS reinstall (but not hard-disk wipe unfortunately, who would delete their ESP anyway?).
 - Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
@@ -28,8 +28,23 @@ Of course, the self-defense feature can prevent user-mode processes from termina
 
 ## Build instructions
 
+### Linux
 > [!IMPORTANT]  
 > This section will be written in the future.
+
+Refer to the [`Dockerfile`](/Dockerfile) for the detailed procedure.
+
+### Windows
+
+The build was tested with Rust 1.94. Additional stuff that need to be installed beside the default target `x86_64-pc-windows-msvc`:
+- The target `x86_64-unknown-uefi`.
+- The crate [`cargo-wdk`](https://crates.io/crates/cargo-wdk) via `cargo install cargo-wdk`. The build was tested with `cargo-wdk v0.1.1`. Future versions are not guaranteed to work though.
+
+Not sure if [Windows Driver Kit (WDK)](https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk) is required or not. This need to be confirmed in the future.
+
+After installing the above, simply run [`scripts/build.bat`](/scripts/build.bat) to build in debug mode. For release mode, run `scripts/build.bat release`. The script was designed to execute independently of the working directory, so you don't have to `cd` to the repository root or anything (and honestly, all scripts should be written this way).
+
+Refer to the [`GitHub Actions config`](/.github/workflows/build.yml) for the detailed procedure.
 
 ## Known limitations
 
