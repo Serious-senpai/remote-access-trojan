@@ -36,11 +36,11 @@ Refer to the [`Dockerfile`](/Dockerfile) for the detailed procedure.
 
 ### Windows
 
-The build was tested with Rust 1.94. Additional stuff that need to be installed beside the default target `x86_64-pc-windows-msvc`:
+The build was tested with Rust 1.94. Additional required stuff beside the default target `x86_64-pc-windows-msvc` includes:
 - The target `x86_64-unknown-uefi`.
 - The crate [`cargo-wdk`](https://crates.io/crates/cargo-wdk) via `cargo install cargo-wdk`. The build was tested with `cargo-wdk v0.1.1`. Future versions are not guaranteed to work though.
 
-Not sure if [Windows Driver Kit (WDK)](https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk) is required or not. This need to be confirmed in the future.
+Not sure if [Windows Driver Kit (WDK)](https://learn.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk) is required or not. This needs to be confirmed in the future.
 
 After installing the above, simply run [`scripts/build.bat`](/scripts/build.bat) to build in debug mode. For release mode, run `scripts/build.bat release`. The script was designed to execute independently of the working directory, so you don't have to `cd` to the repository root or anything (and honestly, all scripts should be written this way).
 

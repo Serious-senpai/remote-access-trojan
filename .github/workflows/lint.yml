@@ -49,9 +49,6 @@ jobs:
           rustflags: ""
           target: x86_64-unknown-uefi
 
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v3
-
       - name: Setup tools
         shell: cmd
         run: |
