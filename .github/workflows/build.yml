@@ -26,7 +26,7 @@ jobs:
         shell: cmd
         run: |
           extern\wdksetup.exe /features + /log "%cd%\wdksetup.log" /quiet
-          cargo install cargo-wdk
+          cargo install --locked --version 0.1.1 cargo-wdk
 
       - name: Build everything
         shell: cmd
