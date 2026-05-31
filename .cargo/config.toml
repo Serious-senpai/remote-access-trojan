@@ -3,3 +3,5 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [env]
 LIBCLANG_PATH = { value = "extern/clang-llvm-21.1.3", relative = true }
+# https://github.com/microsoft/windows-drivers-rs/blob/a90b267ccd9288d076ecbe96a7966f96f337bdc1/crates/wdk-build/src/utils.rs#L314-L328
+Version_Number = "10.0.19041.0"
