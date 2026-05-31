@@ -22,7 +22,7 @@ call :check cargo build -p rat-client --profile %profile%
 set Version_Number=10.0.26100.0
 
 cd /d %root%\rat-driver
-call :check cargo wdk build -v --profile %profile%
+call :check cargo wdk build --profile %profile%
 
 cd /d %root%\rat-efi
 call :check cargo build --profile %profile%
