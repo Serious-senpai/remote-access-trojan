@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum SessionOutput {
     TerminalStdout(SessionOutputTerminalStdout),
     TerminalStderr(SessionOutputTerminalStderr),
-    TerminalClosed(SessionOutputTerminalClosed),
+    Closed(SessionOutputClosed),
 }
 
 impl SessionOutput {
@@ -27,7 +27,7 @@ impl SessionOutput {
     }
 
     pub fn closed() -> Self {
-        Self::TerminalClosed(SessionOutputTerminalClosed {})
+        Self::Closed(SessionOutputClosed {})
     }
 }
 
@@ -42,4 +42,4 @@ pub struct SessionOutputTerminalStderr {
 }
 
 #[derive(Clone, Debug, Deserialize, Object, Serialize)]
-pub struct SessionOutputTerminalClosed;
+pub struct SessionOutputClosed;
