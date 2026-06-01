@@ -36,7 +36,7 @@ Refer to the [`Dockerfile`](/Dockerfile) for the detailed procedure.
 
 ### Windows
 
-The build was tested with Rust 1.94. Additional required stuff beside the default target `x86_64-pc-windows-msvc` includes:
+The build was tested with Rust 1.96. Additional required stuff beside the default target `x86_64-pc-windows-msvc` includes:
 - The target `x86_64-unknown-uefi`.
 - The crate [`cargo-wdk`](https://crates.io/crates/cargo-wdk) via `cargo install cargo-wdk`. The build was tested with `cargo-wdk v0.1.1`. Future versions are not guaranteed to work though.
 
