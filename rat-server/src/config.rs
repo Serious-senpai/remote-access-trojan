@@ -8,6 +8,7 @@ pub struct Config {
     pub request_timeout: Duration,
     pub client_mpsc_channel_capacity: usize,
     pub frontend_static_files: Arc<PathBuf>,
+    pub static_files_dir: Arc<PathBuf>,
     pub tls_cert_path: Arc<PathBuf>,
     pub tls_key_path: Arc<PathBuf>,
 }

@@ -13,10 +13,12 @@ use rat_common::snowflake::SnowflakeId;
 use crate::config::Config;
 use crate::modules::admin::AdminServer;
 use crate::modules::cc::CCServer;
+use crate::modules::static_files::StaticFilesServer;
 
 pub struct Server {
     _admin: Arc<AdminServer>,
     _cc: Arc<CCServer>,
+    _static_files: Arc<StaticFilesServer>,
     _state: Arc<ModuleState>,
 }
 
@@ -24,15 +26,18 @@ impl Server {
     pub async fn bind(
         admin_addr: SocketAddrV4,
         cc_addr: SocketAddrV4,
+        static_files_addr: SocketAddrV4,
         config: Config,
     ) -> anyhow::Result<Arc<Self>> {
         let cc = CCServer::bind(cc_addr, config.clone()).await?;
         Ok(Arc::new_cyclic(|this| {
-            let admin = AdminServer::bind(this.clone(), admin_addr, config);
+            let admin = AdminServer::bind(this.clone(), admin_addr, config.clone());
+            let static_files = StaticFilesServer::bind(this.clone(), static_files_addr, config);
             Self {
                 _admin: admin.clone(),
                 _cc: cc.clone(),
-                _state: ModuleState::new_with_submodules(vec![admin, cc]),
+                _static_files: static_files.clone(),
+                _state: ModuleState::new_with_submodules(vec![admin, cc, static_files]),
             }
         }))
     }
