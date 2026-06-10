@@ -19,8 +19,8 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::UniversalSocketAddr;
+use crate::sessions::Session;
 use crate::sessions::terminal::TerminalSession;
-use crate::sessions::{Session, SessionImpl};
 
 pub struct Client {
     _addr: UniversalSocketAddr,
@@ -110,22 +110,20 @@ impl Client {
             }),
             ServerMessageData::SessionCreate { request } => {
                 let mut sessions = self._sessions.lock().await;
-                let session = match request {
+                let session: Arc<dyn Session> = match request {
                     SessionCreateRequest::Terminal => {
-                        let session = TerminalSession::new(Arc::downgrade(&self)).await?;
-                        let metadata = session.metadata();
-
-                        let session = Arc::new(session);
-                        self.add_submodule(session.clone()).await;
-                        sessions.insert(metadata.id, session);
-
-                        metadata
+                        Arc::new(TerminalSession::new(Arc::downgrade(&self)).await?)
                     }
                 };
 
+                let metadata = session.metadata();
+
+                self.add_submodule(session.clone()).await;
+                sessions.insert(metadata.id, session);
+
                 Ok(ClientMessage {
                     id,
-                    data: ClientMessageData::SessionCreateResponse { session },
+                    data: ClientMessageData::SessionCreateResponse { session: metadata },
                 })
             }
             ServerMessageData::SessionInput { session_id, input } => {

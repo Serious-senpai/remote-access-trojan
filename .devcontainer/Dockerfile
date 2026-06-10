@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     musl-tools \
     socat
 
-RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.94 -y
+RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=1.96 -y
 RUN /root/.cargo/bin/cargo install --locked --version 0.2.0 rustls-cert-gen
 RUN /root/.cargo/bin/rustup toolchain install nightly-2026-05-01
 RUN /root/.cargo/bin/rustup target add x86_64-unknown-linux-gnu x86_64-unknown-linux-musl

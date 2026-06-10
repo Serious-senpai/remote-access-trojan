@@ -22,7 +22,7 @@ use tokio::sync::Mutex;
 use crate::client::Client;
 use crate::sessions::SessionImpl;
 
-const _MAX_BUFFER_SIZE: usize = 2048;
+const _MAX_BUFFER_SIZE: usize = 8192;
 
 #[cfg(windows)]
 fn _build_default_shell() -> anyhow::Result<Command> {
@@ -56,13 +56,16 @@ fn _build_default_shell() -> anyhow::Result<Command> {
 }
 
 pub struct TerminalSession {
+    // Common fields
     _client: Weak<Client>,
     _metadata: Arc<SessionMetadata>,
     _name: String,
+    _state: Arc<ModuleState>,
+
+    // Specific fields
     _process: Mutex<Child>,
     _input: Mutex<ChildStdin>,
     _output: Mutex<(Reader<ChildStdout>, Reader<ChildStderr>)>,
-    _state: Arc<ModuleState>,
     _buffer: Mutex<VecDeque<u8>>,
 }
 
@@ -147,7 +150,7 @@ impl ModuleImpl for TerminalSession {
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
         if let Some(client) = self._client.upgrade() {
             match &event {
-                SessionOutput::TerminalClosed(_) => {
+                SessionOutput::Closed(_) => {
                     // Do not return early here, as we still want to send the closed message to the server
                     self.stop();
                 }
@@ -196,26 +199,12 @@ impl SessionImpl for TerminalSession {
             SessionInput::TerminalStdin(SessionInputTerminalStdin { data }) => {
                 let mut stdin = self._input.lock().await;
                 stdin.write_all(data.as_bytes()).await?;
-
-                // cmd.exe does not echo input like bash does, so we echo it manually here.
-                // #[cfg(windows)]
-                // if let Some(client) = self._client.upgrade() {
-                //     client
-                //         .send(&ClientMessage {
-                //             id: SnowflakeId::new(),
-                //             data: ClientMessageData::SessionOutput {
-                //                 session_id: self._metadata.id,
-                //                 output: SessionOutput::TerminalStderr(
-                //                     SessionOutputTerminalStderr { data },
-                //                 ),
-                //             },
-                //         })
-                //         .await?;
-                // }
             }
             SessionInput::Close(_) => {
                 self._process.lock().await.kill().await?;
-            }
+            } // other => {
+              //     anyhow::bail!("Invalid input for {}: {other:?}", self._name);
+              // }
         }
 
         Ok(())

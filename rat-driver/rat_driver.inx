@@ -43,14 +43,6 @@ ServiceBinary  = %13%\rat_driver.sys
 ServiceType    = 1                                ; SERVICE_KERNEL_DRIVER
 StartType      = 3                                ; SERVICE_DEMAND_START - good for development, change to 2 to start on boot
 ErrorControl   = 1                                ; SERVICE_ERROR_NORMAL
-LoadOrderGroup = "FSFilter Activity Monitor"
-AddReg         = DefaultInstallService.AddRegistry
-
-[DefaultInstallService.AddRegistry]
-HKR, "Parameters", "SupportedFeatures", 0x00010001, 0x3
-HKR, "Parameters\Instances", "DefaultInstance", 0x00000000, %DefaultInstance%
-HKR, "Parameters\Instances\"%InstanceName%, "Altitude", 0x00000000, %InstanceAltitude%
-HKR, "Parameters\Instances\"%InstanceName%, "Flags", 0x00010001, %InstanceFlags%
 
 ; ================= Strings =================
 

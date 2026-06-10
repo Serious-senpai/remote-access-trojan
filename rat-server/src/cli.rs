@@ -18,6 +18,10 @@ pub struct Arguments {
     #[arg(long, default_value_t = 12111)]
     pub admin_port: u16,
 
+    /// Port of the static file server
+    #[arg(long, default_value_t = 12112)]
+    pub static_files_port: u16,
+
     /// The logging level.
     #[arg(long, default_value_t = LevelFilter::Info)]
     pub log_level: LevelFilter,
@@ -42,6 +46,10 @@ pub struct Arguments {
     /// Path to the frontend static files directory.
     #[arg(long, default_value = "rat-frontend/dist")]
     pub frontend_static_files: PathBuf,
+
+    /// Path to the static file directory
+    #[arg(long, default_value = "target/static")]
+    pub static_files_dir: PathBuf,
 
     /// Path to the TLS certificate file in PEM format.
     #[arg(long, default_value = "certs/cert.pem")]

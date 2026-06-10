@@ -1,4 +1,5 @@
 use core::arch::global_asm;
+use core::ffi::CStr;
 use core::{ptr, slice};
 
 use log::{error, info, warn};
@@ -70,7 +71,80 @@ pub fn patch_ntoskrnl(
     let (driver_image_base, e) = empty_buffer.split_at_mut(mapping.size);
     empty_buffer = e;
 
-    let object_callback_trampoline = match unsafe {
+    let process_preop_trampoline = _insert_object_callback_trampoline(
+        driver_image_base,
+        c"ProcessPreopCallback",
+        load_order_list_head,
+    );
+    let thread_preop_trampoline = _insert_object_callback_trampoline(
+        driver_image_base,
+        c"ThreadPreopCallback",
+        load_order_list_head,
+    );
+
+    match unsafe { utils::get_boot_loaded_module(load_order_list_head, TARGET_HOOKED_DRIVER) } {
+        Some(injected_driver) => {
+            let entrypoint = injected_driver.kldr_entry.EntryPoint as *mut u8;
+            info!("Patching target driver entrypoint at {entrypoint:p}");
+
+            let trampoline = unsafe {
+                get_function_code(
+                    DriverEntryHooked_trampoline as *const u8,
+                    DriverEntryHooked_trampoline_end as *const u8,
+                )
+            };
+
+            let cr0 = utils::DisableWriteProtection::new();
+            unsafe {
+                let size = trampoline.len();
+                let entrypoint = slice::from_raw_parts_mut(entrypoint, size);
+
+                // Save original instructions to empty buffer
+                empty_buffer[..size].copy_from_slice(entrypoint);
+
+                // Construct KernelHandoff struct
+                let handoff = KernelHandoff {
+                    driver_entry: InstructionRecoveryInfo {
+                        address: entrypoint.as_ptr() as *mut u8,
+                        instructions: empty_buffer.as_ptr(),
+                        instructions_len: size,
+                    },
+                    process_preop_trampoline,
+                    thread_preop_trampoline,
+                };
+                empty_buffer = &mut empty_buffer[size..];
+                empty_buffer
+                    .as_mut_ptr()
+                    .cast::<KernelHandoff>()
+                    .write_unaligned(handoff);
+
+                // Patching imm64 addresses
+                entrypoint.copy_from_slice(trampoline);
+                entrypoint[2..10].copy_from_slice(&(empty_buffer.as_ptr() as u64).to_le_bytes());
+
+                let driver_image_base = driver_image_base.as_ptr() as u64;
+                entrypoint[12..20].copy_from_slice(
+                    &driver_image_base
+                        .saturating_add(u64::from(mapping.entrypoint))
+                        .to_le_bytes(),
+                );
+
+                info!("DriverEntry hook installed: {entrypoint:02X?}");
+            }
+            drop(cr0);
+        }
+        None => {
+            warn!("No injected driver provided. DriverEntry hook will not be installed.");
+        }
+    }
+}
+
+fn _insert_object_callback_trampoline(
+    driver_image_base: &mut [u8],
+    exported_routine: &CStr,
+    load_order_list_head: &_LIST_ENTRY,
+) -> *const u8 {
+    match unsafe {
         utils::get_boot_loaded_module(load_order_list_head, TARGET_OBJECT_CALLBACK_DRIVER)
     } {
         Some(driver) => {
@@ -79,7 +153,7 @@ pub fn patch_ntoskrnl(
                 pe::iterate_export_address_table_mut(
                     driver_image_base,
                     |our_name, our_function| {
-                        if our_name == c"process_preop_callback" {
+                        if our_name == exported_routine {
                             process_preop_callback = our_function.as_ptr();
                         }
                     },
@@ -87,7 +161,7 @@ pub fn patch_ntoskrnl(
             }
 
             if process_preop_callback.is_null() {
-                warn!("Cannot find exported process_preop_callback in kernel driver");
+                warn!("Cannot find exported {exported_routine:?} in kernel driver");
                 ptr::null()
             } else {
                 let driver = unsafe {
@@ -120,69 +194,14 @@ pub fn patch_ntoskrnl(
                 }
 
                 if trampoline.is_null() {
-                    warn!("Cannot find suitable place for object callback trampoline");
+                    warn!("Cannot find a suitable place for {exported_routine:?} trampoline");
                 } else {
-                    info!("Object callback trampoline inserted at {trampoline:p}");
+                    info!("{exported_routine:?} trampoline inserted at {trampoline:p}");
                 }
 
                 trampoline
             }
         }
         None => ptr::null(),
-    };
-
-    match unsafe { utils::get_boot_loaded_module(load_order_list_head, TARGET_HOOKED_DRIVER) } {
-        Some(injected_driver) => {
-            let entrypoint = injected_driver.kldr_entry.EntryPoint as *mut u8;
-            info!("Patching target driver entrypoint at {entrypoint:p}");
-
-            let trampoline = unsafe {
-                get_function_code(
-                    DriverEntryHooked_trampoline as *const u8,
-                    DriverEntryHooked_trampoline_end as *const u8,
-                )
-            };
-
-            let cr0 = utils::DisableWriteProtection::new();
-            unsafe {
-                let size = trampoline.len();
-                let entrypoint = slice::from_raw_parts_mut(entrypoint, size);
-
-                // Save original instructions to empty buffer
-                empty_buffer[..size].copy_from_slice(entrypoint);
-
-                // Construct KernelHandoff struct
-                let handoff = KernelHandoff {
-                    driver_entry: InstructionRecoveryInfo {
-                        address: entrypoint.as_ptr() as *mut u8,
-                        instructions: empty_buffer.as_ptr(),
-                        instructions_len: size,
-                    },
-                    object_callback_trampoline,
-                };
-                empty_buffer = &mut empty_buffer[size..];
-                empty_buffer
-                    .as_mut_ptr()
-                    .cast::<KernelHandoff>()
-                    .write_unaligned(handoff);
-
-                // Patching imm64 addresses
-                entrypoint.copy_from_slice(trampoline);
-                entrypoint[2..10].copy_from_slice(&(empty_buffer.as_ptr() as u64).to_le_bytes());
-
-                let driver_image_base = driver_image_base.as_ptr() as u64;
-                entrypoint[12..20].copy_from_slice(
-                    &driver_image_base
-                        .saturating_add(u64::from(mapping.entrypoint))
-                        .to_le_bytes(),
-                );
-
-                info!("DriverEntry hook installed: {entrypoint:02X?}");
-            }
-            drop(cr0);
-        }
-        None => {
-            warn!("No injected driver provided. DriverEntry hook will not be installed.");
-        }
     }
 }
