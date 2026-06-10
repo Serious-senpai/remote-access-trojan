@@ -24,7 +24,11 @@ Because the trojan is executed as a Windows service, we automatically get a remo
 
 Of course, the self-defense feature can prevent user-mode processes from terminating our malware, even when we are already *System*.
 
-![windows-self-defense.png](assets/windows-self-defense.png)
+![windows-self-defense-process.png](assets/windows-self-defense-process.png)
+
+Attempts to terminating our threads will also fail. For example, when trying to do so using an Administrator [*Process Explorer*](https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer):
+
+![windows-self-defense-thread.png](assets/windows-self-defense-thread.png)
 
 ## Build instructions
 
