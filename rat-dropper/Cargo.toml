@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 rat-common = { path = "../rat-common" }
+zstd = { workspace = true }
 
 [dependencies.windows-sys]
 workspace = true
@@ -16,6 +17,9 @@ features = [
             "Win32_System_Threading",
             "Win32_System_WindowsProgramming",
 ]
+
+[build-dependencies]
+zstd = { workspace = true }
 
 [lints]
 workspace = true
