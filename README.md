@@ -14,7 +14,7 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 
 ### Windows-only
 
-- Kernel-mode self-defense: preventing process and thread from being intervened, terminated or killed.
+- Kernel-mode self-defense: preventing our user-mode process its threads from being intervened, terminated or killed.
 - Survive OS reinstall (but not hard-disk wipe unfortunately, though who would delete their ESP anyway?).
 - Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 
@@ -26,7 +26,7 @@ Of course, the self-defense feature can prevent user-mode processes from termina
 
 ![windows-self-defense-process.png](assets/windows-self-defense-process.png)
 
-Attempts to terminating our threads will also fail. For example, when trying to do so using an Administrator [*Process Explorer*](https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer):
+Attempts to terminate our threads will also fail. For example, when trying to do so using an Administrator [*Process Explorer*](https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer):
 
 ![windows-self-defense-thread.png](assets/windows-self-defense-thread.png)
 

