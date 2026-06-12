@@ -18,16 +18,20 @@ fn shuffle_key(seed: &mut [u8]) {
         seed[0] = 1;
     }
 
+    let mut common = 0;
+    for e in seed.iter() {
+        common ^= e;
+    }
+
     let len = seed.len();
     for i in 0..len {
-        let mut a = seed[i].wrapping_add(1);
-        let mut b = seed[(i + 1) % len].wrapping_add(2);
-        let mut c = seed[(i + 3) % len].wrapping_add(3);
+        let mut a = seed[i].wrapping_add(10);
+        let mut b = seed[(i + 1) % len].wrapping_add(20);
+        let mut c = seed[(i + 3) % len].wrapping_add(30);
 
-        let mut d = 0;
-        for e in seed.iter() {
-            d ^= e;
-        }
+        common ^= a ^ b ^ c;
+
+        let d = common.wrapping_mul(u8::try_from(i & usize::from(u8::MAX)).unwrap());
 
         a = a.wrapping_add(d);
         b = b.wrapping_add(d);
@@ -41,8 +45,12 @@ fn shuffle_key(seed: &mut [u8]) {
 
 fn main() {
     let env_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-
     let embedded_file = env_out_dir.join("embedded.efi");
+
+    let mut compressed = vec![];
+    let mut compressor = zstd::Encoder::new(&mut compressed, 22).unwrap();
+    compressor.write_all(EFI_APPLICATION).unwrap();
+    compressor.finish().unwrap();
 
     let mut key = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -51,11 +59,13 @@ fn main() {
         .to_le_bytes();
     shuffle_key(&mut key);
 
-    let mut file = fs::File::create(&embedded_file).unwrap();
-    for (i, m) in EFI_APPLICATION.iter().enumerate() {
-        let c = m ^ key[i % key.len()];
-        file.write_all(&[c]).unwrap();
+    let mut encrypted = Vec::with_capacity(compressed.len());
+    for (i, m) in compressed.iter().enumerate() {
+        encrypted.push(m ^ key[i % key.len()]);
     }
+
+    let mut file = fs::File::create(&embedded_file).unwrap();
+    file.write_all(&encrypted).unwrap();
 
     let key_file = env_out_dir.join("key.rs");
     let mut file = fs::File::create(&key_file).unwrap();
