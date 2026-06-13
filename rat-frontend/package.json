@@ -15,7 +15,7 @@
     "openapi-fetch": "^0.17.0",
     "openapi-typescript": "^7.13.0",
     "vue": "^3.5.38",
-    "vue-router": "^5.0.7"
+    "vue-router": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
