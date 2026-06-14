@@ -40,5 +40,6 @@ services:
     ports:
       - "12110:12110"
       - "12111:12111"
+      - "12112:12112"
     volumes:
       - ./certs:/certs
