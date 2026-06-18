@@ -49,7 +49,7 @@ impl ModuleImpl for ClientPing {
     async fn handle(self: Arc<Self>, _event: Self::EventType) -> anyhow::Result<()> {
         if let Some(connector) = self._connector.upgrade()
             && let Err(e) = connector
-                .request(&ServerMessage::new(ServerMessageData::Ping))
+                .request(ServerMessage::new(ServerMessageData::Ping))
                 .await
         {
             error!(

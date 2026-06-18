@@ -219,8 +219,10 @@ impl ModuleImpl for Client {
                 let mut state = self._stream.lock().await;
                 state.0.write_all(&data).await?;
                 state.0.flush().await?;
+                debug!("Sent {data:02X?} to server");
             }
             Event::Receive(data) => {
+                debug!("Received {data:02X?} from server");
                 let mut total_read_buf = self._total_read_buf.lock().await;
                 let mut offset = total_read_buf.len();
                 total_read_buf.extend(data);

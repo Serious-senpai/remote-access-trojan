@@ -96,7 +96,7 @@ impl CCServer {
         match entry {
             Some(client) => {
                 let response = client
-                    .request(&ServerMessage::new(ServerMessageData::SessionQuery))
+                    .request(ServerMessage::new(ServerMessageData::SessionQuery))
                     .await?;
 
                 if let ClientMessageData::SessionQueryResponse { sessions } = response.data {
@@ -124,7 +124,7 @@ impl CCServer {
         match entry {
             Some(client) => {
                 let response = client
-                    .request(&ServerMessage::new(ServerMessageData::SessionCreate {
+                    .request(ServerMessage::new(ServerMessageData::SessionCreate {
                         request,
                     }))
                     .await?;
@@ -164,7 +164,7 @@ impl CCServer {
         match entry {
             Some(client) => {
                 let response = client
-                    .request(&ServerMessage::new(ServerMessageData::SessionInput {
+                    .request(ServerMessage::new(ServerMessageData::SessionInput {
                         session_id,
                         input,
                     }))
@@ -195,7 +195,7 @@ impl CCServer {
         match entry {
             Some(client) => {
                 let response = client
-                    .request(&ServerMessage::new(ServerMessageData::SessionStateQuery {
+                    .request(ServerMessage::new(ServerMessageData::SessionStateQuery {
                         session_id,
                     }))
                     .await?;

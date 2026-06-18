@@ -56,7 +56,7 @@ impl ModuleImpl for ClientInfo {
     async fn handle(self: Arc<Self>, _event: Self::EventType) -> anyhow::Result<()> {
         if let Some(connector) = self._connector.upgrade() {
             match connector
-                .request(&ServerMessage::new(ServerMessageData::SystemInfoQuery))
+                .request(ServerMessage::new(ServerMessageData::SystemInfoQuery))
                 .await
             {
                 Ok(response) => match response.data {

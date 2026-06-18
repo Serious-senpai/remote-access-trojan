@@ -103,15 +103,17 @@ impl ClientConnector {
         Ok(())
     }
 
-    async fn _send(&self, message: &ServerMessage) -> anyhow::Result<()> {
-        self._sender.send(message.clone()).await?;
+    async fn _send(&self, message: ServerMessage) -> anyhow::Result<()> {
+        self._sender.send(message).await?;
         Ok(())
     }
 
-    pub async fn request(&self, request: &ServerMessage) -> anyhow::Result<ClientMessage> {
+    pub async fn request(&self, request: ServerMessage) -> anyhow::Result<ClientMessage> {
         let id = request.id;
         let waiter = async move { self.wait_for(move |m| m.id == id).await };
 
+        let failure_message = format!("Failed to send {request:?} to {}", self._peer);
+        let timeout_message = format!("Request {request:?} timed out to {}", self._peer);
         let result = tokio::try_join!(
             biased;
             time::timeout(self._config.request_timeout, waiter),
@@ -121,13 +123,13 @@ impl ClientConnector {
         match result {
             Ok((receive, send)) => {
                 if let Err(e) = send {
-                    anyhow::bail!("Failed to send {request:?} to {}: {e}", self._peer);
+                    anyhow::bail!("{failure_message}: {e}");
                 }
 
                 receive
             }
-            Err(_) => {
-                anyhow::bail!("Request {request:?} timed out to {}", self._peer);
+            Err(e) => {
+                anyhow::bail!("{timeout_message}: {e}");
             }
         }
     }
@@ -185,7 +187,7 @@ impl ModuleImpl for ClientConnector {
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
         let (stream, receiver) = &mut *self._stream.lock().await;
-        let mut buffer = vec![];
+        let mut buffer = vec![0; 1024];
 
         tokio::select! {
             Ok(size) = stream.read(&mut buffer) => match size {
@@ -207,8 +209,10 @@ impl ModuleImpl for ClientConnector {
                 let mut state = self._stream.lock().await;
                 state.0.write_all(&data).await?;
                 state.0.flush().await?;
+                debug!("Sent {data:02X?} to {}", self._peer);
             }
             Event::Receive(data) => {
+                debug!("Received {data:02X?} from {}", self._peer);
                 let mut total_read_buf = self._total_read_buf.lock().await;
                 let mut offset = total_read_buf.len();
                 total_read_buf.extend(data);
