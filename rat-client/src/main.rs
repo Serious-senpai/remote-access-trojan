@@ -13,7 +13,7 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName};
 use tokio::signal;
 
-const ROOT_CA: &[u8] = include_bytes!("../../certs/root-ca.pem");
+const ROOT_CA: &[u8] = include_bytes!("../../certs/root.crt");
 
 async fn beacon(config: Config) -> Option<Arc<Client>> {
     tokio::select! {
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config {
         server: arguments.host.clone(),
-        cert_server_name: ServerName::try_from(arguments.cert_server_name.clone())?,
+        cert_server_name: ServerName::try_from("rat-server")?,
         cert_trusted_roots: trusted_roots,
     };
 

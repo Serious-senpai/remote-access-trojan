@@ -17,6 +17,9 @@ tokio = { workspace = true, features = ["io-util", "net", "process", "rt-multi-t
 tokio-rustls = { workspace = true }
 windows-service = { workspace = true }
 
+[build-dependencies]
+rcgen = { workspace = true, features = ["crypto", "pem", "ring"] }
+
 [dependencies.windows-sys]
 workspace = true
 

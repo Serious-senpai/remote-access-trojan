@@ -14,10 +14,6 @@ pub struct Arguments {
     #[arg(long, default_value = "127.0.0.1:12110")]
     pub host: String,
 
-    /// Expected server name in the TLS certificate (for certificate validation)
-    #[arg(long, default_value = "localhost")]
-    pub cert_server_name: String,
-
     /// The logging level
     #[arg(long, default_value_t = LevelFilter::Info)]
     pub log_level: LevelFilter,

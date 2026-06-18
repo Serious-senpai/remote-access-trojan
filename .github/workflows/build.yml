@@ -39,6 +39,12 @@ jobs:
           copy rat-efi\target\x86_64-unknown-uefi\release\rat-efi.efi target\release\rat-efi.efi
           copy wdksetup.log target\release\wdksetup.log
 
+      - name: Upload certificates
+        uses: actions/upload-artifact@v7
+        with:
+          name: certificates
+          path: certs/
+
       - name: Upload Windows executables
         uses: actions/upload-artifact@v7
         with:
@@ -54,10 +60,17 @@ jobs:
   docker:
     name: Build Docker images
     runs-on: ubuntu-latest
+    needs: windows
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Download certificates
+        uses: actions/download-artifact@v8
+        with:
+          name: certificates
+          path: certs/
 
       - name: Build Docker images
         run: docker compose build

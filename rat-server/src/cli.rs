@@ -52,18 +52,18 @@ pub struct Arguments {
     pub static_files_dir: PathBuf,
 
     /// Path to the TLS certificate file in PEM format. This is used by the admin server.
-    #[arg(long, default_value = "certs/cert.pem")]
+    #[arg(long, default_value = "certs/server.crt")]
     pub tls_admin_cert_path: PathBuf,
 
     /// Path to the TLS private key file in PEM format. This is used by the admin server.
-    #[arg(long, default_value = "certs/cert.key.pem")]
+    #[arg(long, default_value = "certs/server.key")]
     pub tls_admin_key_path: PathBuf,
 
     /// Path to the TLS certificate file in PEM format. This is used by the C&C server.
-    #[arg(long, default_value = "certs/cert.pem")]
+    #[arg(long, default_value = "certs/server.crt")]
     pub tls_cc_cert_path: PathBuf,
 
     /// Path to the TLS private key file in PEM format. This is used by the C&C server.
-    #[arg(long, default_value = "certs/cert.key.pem")]
+    #[arg(long, default_value = "certs/server.key")]
     pub tls_cc_key_path: PathBuf,
 }
