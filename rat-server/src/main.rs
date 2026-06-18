@@ -32,8 +32,10 @@ async fn main() -> anyhow::Result<()> {
         client_mpsc_channel_capacity: arguments.client_mpsc_channel_capacity,
         frontend_static_files: Arc::new(arguments.frontend_static_files),
         static_files_dir: Arc::new(arguments.static_files_dir),
-        tls_cert_path: Arc::new(arguments.tls_cert_path),
-        tls_key_path: Arc::new(arguments.tls_key_path),
+        tls_admin_cert_path: Arc::new(arguments.tls_admin_cert_path),
+        tls_admin_key_path: Arc::new(arguments.tls_admin_key_path),
+        tls_cc_cert_path: Arc::new(arguments.tls_cc_cert_path),
+        tls_cc_key_path: Arc::new(arguments.tls_cc_key_path),
     };
 
     let all_interfaces = Ipv4Addr::new(0, 0, 0, 0);

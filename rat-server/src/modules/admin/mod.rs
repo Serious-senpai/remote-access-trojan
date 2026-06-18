@@ -41,7 +41,7 @@ impl AdminServer {
         })
     }
 
-    /// Reference: https://github.com/rustls/tokio-rustls/blob/main/examples/server.rs
+    /// Reference: https://github.com/poem-web/poem/blob/master/examples/poem/tls/src/main.rs
     async fn _prepare_tls_stream<T>(
         &self,
         listener: TcpListener<T>,
@@ -49,8 +49,8 @@ impl AdminServer {
     where
         T: ToSocketAddrs + Send,
     {
-        let cert = fs::read(self._config.tls_cert_path.as_ref()).await?;
-        let key = fs::read(self._config.tls_key_path.as_ref()).await?;
+        let cert = fs::read(self._config.tls_admin_cert_path.as_ref()).await?;
+        let key = fs::read(self._config.tls_admin_key_path.as_ref()).await?;
         let config = RustlsConfig::new().fallback(RustlsCertificate::new().cert(cert).key(key));
 
         Ok(listener.rustls(config))

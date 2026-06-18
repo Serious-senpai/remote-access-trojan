@@ -13,7 +13,9 @@ poem = { workspace = true, features = ["rustls", "static-files"] }
 poem-openapi = { workspace = true, features = ["swagger-ui"] }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
+rustls = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
+tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 
 [lints]

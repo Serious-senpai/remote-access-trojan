@@ -5,8 +5,6 @@ pub mod framework;
 #[cfg(feature = "std")]
 pub mod logger;
 #[cfg(feature = "std")]
-pub mod reader;
-#[cfg(feature = "std")]
 pub mod schema;
 #[cfg(feature = "std")]
 pub mod snowflake;

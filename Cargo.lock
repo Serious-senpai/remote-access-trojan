@@ -1076,8 +1076,10 @@ dependencies = [
  "log",
  "postcard",
  "rat-common",
+ "rustls",
  "sysinfo",
  "tokio",
+ "tokio-rustls",
  "windows-service",
  "windows-sys 0.61.2",
 ]
@@ -1122,7 +1124,9 @@ dependencies = [
  "poem-openapi",
  "postcard",
  "rat-common",
+ "rustls",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
 ]
 

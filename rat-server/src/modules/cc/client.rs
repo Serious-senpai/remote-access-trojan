@@ -5,23 +5,28 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{debug, error};
 use rat_common::framework::{Module, ModuleImpl, ModuleState};
-use rat_common::reader::Reader;
 use rat_common::schema::{ClientMessage, ServerMessage, SystemInfo};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio::time;
+use tokio_rustls::server::TlsStream;
 
 use crate::config::Config;
 use crate::modules::cc::info::ClientInfo;
 use crate::modules::cc::listener::{ClientOnceListener, ClientPersistentListener};
 use crate::modules::cc::ping::ClientPing;
 
+pub enum Event {
+    Send(ServerMessage),
+    Receive(Vec<u8>),
+    Terminate,
+}
+
 pub struct ClientConnector {
-    _reader: Mutex<Reader<OwnedReadHalf>>,
+    _stream: Mutex<(TlsStream<TcpStream>, mpsc::Receiver<ServerMessage>)>,
+    _sender: mpsc::Sender<ServerMessage>,
     _info: RwLock<Option<SystemInfo>>,
-    _writer: Mutex<OwnedWriteHalf>,
     _peer: SocketAddr,
     _config: Config,
     _name: String,
@@ -32,12 +37,12 @@ pub struct ClientConnector {
 }
 
 impl ClientConnector {
-    pub fn new(stream: TcpStream, peer: SocketAddr, config: Config) -> Arc<Self> {
-        let (reader, writer) = stream.into_split();
+    pub fn new(stream: TlsStream<TcpStream>, peer: SocketAddr, config: Config) -> Arc<Self> {
+        let (sender, receiver) = mpsc::channel(1);
         Arc::new_cyclic(|this| Self {
-            _reader: Mutex::new(Reader::new(reader)),
+            _stream: Mutex::new((stream, receiver)),
+            _sender: sender,
             _info: RwLock::new(None),
-            _writer: Mutex::new(writer),
             _peer: peer,
             _config: config.clone(),
             _name: format!("ClientConnector [{peer}]"),
@@ -99,9 +104,7 @@ impl ClientConnector {
     }
 
     async fn _send(&self, message: &ServerMessage) -> anyhow::Result<()> {
-        let data = postcard::to_stdvec_cobs(message)?;
-        let mut writer = self._writer.lock().await;
-        writer.write_all(&data).await?;
+        self._sender.send(message.clone()).await?;
         Ok(())
     }
 
@@ -170,7 +173,7 @@ impl Drop for ClientConnector {
 
 #[async_trait]
 impl ModuleImpl for ClientConnector {
-    type EventType = anyhow::Result<usize>;
+    type EventType = Event;
 
     fn name(&self) -> &str {
         &self._name
@@ -181,55 +184,59 @@ impl ModuleImpl for ClientConnector {
     }
 
     async fn listen(self: Arc<Self>) -> Self::EventType {
-        let mut reader = self._reader.lock().await;
-        Ok(reader.read().await?)
+        let (stream, receiver) = &mut *self._stream.lock().await;
+        let mut buffer = vec![];
+
+        tokio::select! {
+            Ok(size) = stream.read(&mut buffer) => match size {
+                0 => Event::Terminate,
+                size => {
+                    buffer.truncate(size);
+                    Event::Receive(buffer)
+                },
+            },
+            Some(message) = receiver.recv() => Event::Send(message),
+            else => Event::Terminate,
+        }
     }
 
     async fn handle(self: Arc<Self>, event: Self::EventType) -> anyhow::Result<()> {
-        let mut size = 0;
-        let closed = match event {
-            Ok(0) => true,
-            Ok(s) => {
-                size = s;
-                false
+        match event {
+            Event::Send(message) => {
+                let data = postcard::to_stdvec_cobs(&message)?;
+                let mut state = self._stream.lock().await;
+                state.0.write_all(&data).await?;
+                state.0.flush().await?;
             }
-            Err(e) => {
-                error!("Error when reading from {}: {e}", self._peer);
-                true
-            }
-        };
+            Event::Receive(data) => {
+                let mut total_read_buf = self._total_read_buf.lock().await;
+                let mut offset = total_read_buf.len();
+                total_read_buf.extend(data);
 
-        if closed {
-            debug!("Client {} disconnected", self._peer);
-            self.stop();
-            return Ok(());
-        }
+                while offset < total_read_buf.len() {
+                    if total_read_buf[offset] == 0 {
+                        let mut frame = total_read_buf.drain(..=offset).collect::<Vec<u8>>();
+                        offset = 0;
 
-        let mut total_read_buf = self._total_read_buf.lock().await;
-        let mut offset = {
-            let reader = self._reader.lock().await;
-            let original_len = total_read_buf.len();
-            total_read_buf.extend(reader.prefix(size));
-            original_len
-        };
-
-        while offset < total_read_buf.len() {
-            if total_read_buf[offset] == 0 {
-                let mut frame = total_read_buf.drain(..=offset).collect::<Vec<u8>>();
-                offset = 0;
-
-                match postcard::from_bytes_cobs::<ClientMessage>(&mut frame) {
-                    Ok(message) => {
-                        if let Err(e) = self._process_message(message).await {
-                            error!("Error processing message from {}: {e}", self._peer);
+                        match postcard::from_bytes_cobs::<ClientMessage>(&mut frame) {
+                            Ok(message) => {
+                                if let Err(e) = self._process_message(message).await {
+                                    error!("Error processing message from {}: {e}", self._peer);
+                                }
+                            }
+                            Err(e) => {
+                                error!("Received malformed message from {}: {e}", self._peer);
+                            }
                         }
-                    }
-                    Err(e) => {
-                        error!("Received malformed message from {}: {e}", self._peer);
+                    } else {
+                        offset += 1;
                     }
                 }
-            } else {
-                offset += 1;
+            }
+            Event::Terminate => {
+                debug!("Client {} disconnected", self._peer);
+                self.stop();
+                return Ok(());
             }
         }
 
