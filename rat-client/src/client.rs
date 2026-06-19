@@ -24,7 +24,7 @@ use crate::sessions::Session;
 use crate::sessions::terminal::TerminalSession;
 
 pub enum Event {
-    Send(ClientMessage),
+    Send(Box<ClientMessage>),
     Receive(Vec<u8>),
     Terminate,
 }
@@ -207,7 +207,7 @@ impl ModuleImpl for Client {
                     Event::Receive(buffer)
                 },
             },
-            Some(message) = receiver.recv() => Event::Send(message),
+            Some(message) = receiver.recv() => Event::Send(Box::new(message)),
             else => Event::Terminate,
         }
     }
