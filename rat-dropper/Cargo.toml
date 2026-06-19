@@ -14,11 +14,12 @@ features = [
         "Win32_Security",
         "Win32_System",
             "Win32_System_Ioctl",
+            "Win32_System_LibraryLoader",
             "Win32_System_Threading",
-            "Win32_System_WindowsProgramming",
 ]
 
 [build-dependencies]
+sha2 = { workspace = true }
 zstd = { workspace = true }
 
 [lints]
