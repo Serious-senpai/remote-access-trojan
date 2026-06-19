@@ -13,10 +13,9 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_NO_MORE_FILES, ERROR_SUCCESS, FARPROC, GetLastError, HANDLE,
     INVALID_HANDLE_VALUE, LUID, MAX_PATH,
 };
-use windows_sys::Win32::Security::TOKEN_ACCESS_MASK;
 use windows_sys::Win32::Security::{
-    LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
-    TOKEN_QUERY,
+    LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ACCESS_MASK, TOKEN_ADJUST_PRIVILEGES,
+    TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, DeleteVolumeMountPointW, FILE_SHARE_READ, FILE_SHARE_WRITE, FindFirstVolumeW,
