@@ -33,11 +33,9 @@ async fn main() -> anyhow::Result<()> {
     initialize_logger(arguments.log_level, &arguments.log_path)?;
 
     #[cfg(windows)]
-    let scm_thread = if arguments.scm {
-        Some(WindowsServiceDispatcher::start())
-    } else {
-        None
-    };
+    if arguments.scm {
+        WindowsServiceDispatcher::start();
+    }
 
     let mut trusted_roots = rustls::RootCertStore::empty();
     for cert in CertificateDer::pem_reader_iter(ROOT_CA) {
@@ -67,11 +65,5 @@ async fn main() -> anyhow::Result<()> {
     });
 
     client.run().await?;
-
-    #[cfg(windows)]
-    if let Some(scm) = scm_thread {
-        scm.stop().await;
-    }
-
     Ok(())
 }

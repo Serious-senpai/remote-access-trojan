@@ -1,12 +1,11 @@
 use std::ffi::OsString;
 use std::ptr;
-use std::sync::Once;
 use std::time::Duration;
 
 use log::{error, info, warn};
 use rat_common::utils::DropGuard;
 use rat_common::windows::{DRIVER_USER_OBJECT, IOCTL_START_DEFENSE, RAT_CLIENT_SERVICE_NAME};
-use tokio::task::{self, JoinHandle};
+use tokio::task;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
 };
@@ -17,8 +16,6 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING};
 use windows_sys::Win32::System::IO::DeviceIoControl;
-
-static SERVICE_STOPPED: Once = Once::new();
 
 define_windows_service!(ffi_service_main, service_main);
 
@@ -44,8 +41,6 @@ fn service_main(_: Vec<OsString>) {
                 error!("Failed to set service status: {e}");
                 return;
             }
-
-            SERVICE_STOPPED.wait();
         }
         Err(e) => {
             error!("Failed to register service control handler: {e}");
@@ -53,20 +48,15 @@ fn service_main(_: Vec<OsString>) {
     }
 }
 
-pub struct WindowsServiceDispatcher {
-    thread: JoinHandle<()>,
-}
+pub struct WindowsServiceDispatcher;
 
 impl WindowsServiceDispatcher {
-    pub fn start() -> Self {
-        let result = Self {
-            thread: task::spawn_blocking(|| {
-                if let Err(e) = service_dispatcher::start(RAT_CLIENT_SERVICE_NAME, ffi_service_main)
-                {
-                    error!("Windows Service error: {e}");
-                }
-            }),
-        };
+    pub fn start() {
+        task::spawn_blocking(|| {
+            if let Err(e) = service_dispatcher::start(RAT_CLIENT_SERVICE_NAME, ffi_service_main) {
+                error!("Windows Service error: {e}");
+            }
+        });
 
         let driver = unsafe {
             CreateFileW(
@@ -108,15 +98,6 @@ impl WindowsServiceDispatcher {
             }
 
             drop(guard);
-        }
-
-        result
-    }
-
-    pub async fn stop(self) {
-        SERVICE_STOPPED.call_once(|| {});
-        if let Err(e) = self.thread.await {
-            error!("Failed to stop Windows Service: {e}");
         }
     }
 }
