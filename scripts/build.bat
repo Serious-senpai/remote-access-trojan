@@ -27,8 +27,11 @@ call :check cargo wdk build --profile %profile%
 cd /d %root%\rat-efi
 call :check cargo build --profile %profile%
 
+@REM Fun fact: Build individual workspace members result in smaller executables because the dependencies are not pulled at once.
+@REM Besides, we have already built rat-client before.
 cd /d %root%
-call :check cargo build --profile %profile%
+call :check cargo build --profile %profile% -p rat-dropper
+call :check cargo build --profile %profile% -p rat-server
 
 cd /d %current%
 exit /b %result%
