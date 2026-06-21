@@ -12,7 +12,7 @@ use windows_service::service::{
 use windows_service::service_control_handler::ServiceControlHandlerResult;
 use windows_service::{define_windows_service, service_control_handler, service_dispatcher};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GENERIC_READ, GENERIC_WRITE, GetLastError, INVALID_HANDLE_VALUE,
+    CloseHandle, GetLastError, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING};
 use windows_sys::Win32::System::IO::DeviceIoControl;
@@ -39,7 +39,6 @@ fn service_main(_: Vec<OsString>) {
                 process_id: None,
             }) {
                 error!("Failed to set service status: {e}");
-                return;
             }
         }
         Err(e) => {

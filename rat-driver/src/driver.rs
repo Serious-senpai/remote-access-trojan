@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{mem, ptr};
 
 use rat_common::windows::kernel::KernelHandoff;
-use wdk::{self, nt_success};
+use wdk::nt_success;
 use wdk_sys::ntddk::{
     IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsCreateSystemThread,
     RtlInitUnicodeString,

@@ -6,7 +6,7 @@ use core::{mem, ptr, slice};
 use aho_corasick::AhoCorasickBuilder;
 use rat_common::utils::DropGuard;
 use rat_common::windows::kernel::KernelHandoff;
-use wdk::{self, nt_success};
+use wdk::nt_success;
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
     KeDelayExecutionThread, ObUnRegisterCallbacks, RtlInitUnicodeString, ZwClose, ZwCreateKey,
