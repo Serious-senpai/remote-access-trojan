@@ -16,7 +16,6 @@ static _COUNTER: AtomicU32 = AtomicU32::new(0);
 
 impl SnowflakeId {
     const _TAIL_BITS: u32 = 32;
-    const _TIMESTAMP_BITS: u32 = 128 - Self::_TAIL_BITS;
 
     /// Unix timestamp for 2026-01-01T00:00:00Z
     const _EPOCH_2026_MS: u128 = 1767225600000;

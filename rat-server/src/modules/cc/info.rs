@@ -4,7 +4,7 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use log::warn;
-use rat_common::framework::{Module, ModuleImpl, ModuleState};
+use rat_common::framework::{ModuleImpl, ModuleState};
 use rat_common::schema::{ClientMessageData, ServerMessage, ServerMessageData};
 use tokio::time::sleep;
 
@@ -50,7 +50,7 @@ impl ModuleImpl for ClientInfo {
             return;
         }
 
-        sleep(self._config.heartbeat_interval).await;
+        sleep(self._config.heartbeat_interval * 2).await;
     }
 
     async fn handle(self: Arc<Self>, _event: Self::EventType) -> anyhow::Result<()> {
@@ -62,7 +62,6 @@ impl ModuleImpl for ClientInfo {
                 Ok(response) => match response.data {
                     ClientMessageData::SystemInfoQueryResponse { info } => {
                         connector.update_info(info).await;
-                        self.stop();
                     }
                     response => {
                         warn!(
