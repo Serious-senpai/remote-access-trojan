@@ -38,7 +38,7 @@ fn setup_new_boot_entry() {
     let mut indices = vec![];
     let mut boot_order_var = None;
     let mut new_boot_entry = None;
-    for key in runtime::variable_keys() {
+    'k: for key in runtime::variable_keys() {
         match key {
             Ok(key) => {
                 let name = key.name.to_string();
@@ -58,32 +58,30 @@ fn setup_new_boot_entry() {
                 } else if let Some(index) = name.strip_prefix("Boot")
                     && let Ok(index) = u16::from_str_radix(index, 16)
                 {
-                    info!("Key {}, vendor {}", key.name, key.vendor.0);
                     indices.push(index);
 
                     match runtime::get_variable_boxed(&key.name, &key.vendor) {
                         Ok((mut data, attributes)) => {
+                            info!(
+                                "Key {}, vendor {}, data = {data:02X?}",
+                                key.name, key.vendor.0,
+                            );
                             if data.len() >= size_of::<_EFI_LOAD_OPTION>()
                                 && let Some(header) =
                                     unsafe { data.as_ptr().cast::<_EFI_LOAD_OPTION>().as_ref() }
                             {
-                                let mut ptr = data
-                                    .as_mut_ptr()
-                                    .wrapping_byte_add(size_of::<_EFI_LOAD_OPTION>())
-                                    .cast::<u16>();
-                                while let Some(&c) = unsafe { ptr.as_ref() }
-                                    && c != 0
+                                let mut offset = size_of::<_EFI_LOAD_OPTION>();
+                                while offset.saturating_add(1) < data.len()
+                                    && (data[offset] != 0 || data[offset.saturating_add(1)] != 0)
                                 {
-                                    ptr = ptr.wrapping_add(1);
+                                    offset = offset.saturating_add(2);
                                 }
-                                ptr = ptr.wrapping_add(1);
+                                offset = offset.saturating_add(2);
 
-                                let mut file_path_list = unsafe {
-                                    slice::from_raw_parts_mut(
-                                        ptr.cast::<u8>(),
-                                        header.FilePathListLength.into(),
-                                    )
-                                };
+                                let mut file_path_list = &mut data
+                                    [offset..offset + usize::from(header.FilePathListLength)];
+                                offset = offset.saturating_add(header.FilePathListLength.into());
+
                                 while !file_path_list.is_empty() {
                                     match unsafe {
                                         file_path_list
@@ -117,11 +115,13 @@ fn setup_new_boot_entry() {
                                                         "\\EFI\\Microsoft\\Boot\\bootmgfw.efi",
                                                     ) {
                                                         current_u16[..].copy_from_slice(&target);
-                                                        new_boot_entry = Some((attributes, data));
+
+                                                        new_boot_entry =
+                                                            Some((attributes, data, offset));
                                                         break;
                                                     } else if path.eq_str_until_nul(&target_utf8) {
                                                         new_boot_entry = None;
-                                                        break;
+                                                        break 'k;
                                                     }
                                                 }
                                             }
@@ -147,7 +147,7 @@ fn setup_new_boot_entry() {
     }
 
     if let Some((bo_key, bo_data, bo_attributes)) = boot_order_var
-        && let Some((attributes, data)) = new_boot_entry
+        && let Some((attributes, data, size)) = new_boot_entry
     {
         indices.sort_unstable();
         indices.push(0); // If there is no free index, we simply create a new one with the next possible value.
@@ -159,6 +159,9 @@ fn setup_new_boot_entry() {
                 info!("Creating new boot entry {name:?}");
                 match CString16::try_from(name.as_str()) {
                     Ok(name) => {
+                        // Do not keep the OptionalData, or else the UEFI variable will be removed later.
+                        // Idk why though, most likely because Windows BCD remove unrecognized boot entries.
+                        let data = &data[..size];
                         match runtime::set_variable(
                             &name,
                             &VariableVendor::GLOBAL_VARIABLE,

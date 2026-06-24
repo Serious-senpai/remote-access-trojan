@@ -24,7 +24,7 @@ pub const RAT_CLIENT_OBJ_PATH: &U16CStr = u16cstr!(formatcp!(
     "\\SystemRoot\\Temp\\{RAT_CLIENT_SERVICE_NAME}.exe"
 ));
 pub const RAT_CLIENT_SERVICE_PATH: &U16CStr = u16cstr!(formatcp!(
-    "\"%SystemRoot%\\Temp\\{RAT_CLIENT_SERVICE_NAME}.exe\" --host 192.168.56.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
+    "\"%SystemRoot%\\Temp\\{RAT_CLIENT_SERVICE_NAME}.exe\" --host localhost:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
 ));
 
 pub const ALTITUDE: &U16CStr = u16cstr!("360000");
