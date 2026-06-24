@@ -166,7 +166,7 @@ fn setup_new_boot_entry() {
                             &name,
                             &VariableVendor::GLOBAL_VARIABLE,
                             attributes,
-                            &data,
+                            data,
                         ) {
                             Ok(_) => {
                                 info!(
