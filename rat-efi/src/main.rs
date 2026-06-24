@@ -167,7 +167,7 @@ fn setup_new_boot_entry() {
                         ) {
                             Ok(_) => {
                                 info!(
-                                    "Created {name}, attributes = 0x{attributes:02X}, data = {data:02X?}"
+                                    "Created {name}, attributes = 0x{attributes:02X}, data = {data:02X?}",
                                 )
                             }
                             Err(e) => error!("Error writing {name}: {e}"),
@@ -204,6 +204,8 @@ fn setup_new_boot_entry() {
                         error!("Cannot construct CString16 from {name:?}: {e}");
                     }
                 }
+
+                break;
             }
         }
     }
