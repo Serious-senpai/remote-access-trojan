@@ -9,6 +9,14 @@
 #![allow(dead_code)]
 use core::ffi::c_void;
 
+// https://uefi.org/specs/UEFI/2.10/03_Boot_Manager.html
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct _EFI_LOAD_OPTION {
+    pub Attributes: u32,
+    pub FilePathListLength: u16,
+}
+
 // 0x10 bytes (sizeof)
 #[repr(C)]
 #[derive(Clone, Copy)]

