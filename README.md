@@ -14,7 +14,8 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 
 ### Windows-only
 
-- Bypass Windows reinstallation.
+- Bypass Windows reinstallation ("Reset this PC" option).
+    - Cannot bypass reinstallation using a Windows installation media (USB/DVD) though. The persistence works by creating a new boot entry and setting it as default. When using an installation media, the malicious boot entry still exists, but Windows sets its legitimate boot entry as default.
 - Kernel-mode self-defense: preventing our user-mode process its threads from being intervened, terminated or killed.
 - Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 
@@ -54,3 +55,8 @@ Refer to the [`GitHub Actions config`](/.github/workflows/build.yml) for the det
 ### Windows-only
 
 - Cannot bypass UEFI Secure Boot yet, though you can refer to [this repository](https://github.com/Wack0/CVE-2022-21894) for a proof-of-concept vulnerability.
+
+## Full documentation
+
+> [!IMPORTANT]  
+> Will be uploaded after I complete my graduation thesis.
