@@ -12,7 +12,13 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
     - With the help of `rustls`, OpenSSL is completely not required to work.
 - Terminal frontend using [xterm.js](https://xtermjs.org/) in operator control panel.
 - OpenAPI-based HTTP/2 management API, which can be easily integrated with another web frontend.
-- Obfuscated dropper using XOR encryption with a 32-byte key.
+- Obfuscated dropper using XOR encryption with a 64-byte key (created by hashing the build timestamp with SHA512).
+    - The [dropper](rat-dropper) is just a tool rather than a system component. You can replace it with a batch script that:
+        - Verify the system is using UEFI, Secure Boot is disabled.
+        - Mount ESP.
+        - Copy `bootmgfw.efi` (legitimate) to `bootmgfw_old.efi`.
+        - Drop `rat-efi` to `bootmgfw.efi`, `violet04.efi`.
+        - Unmount ESP.
 
 ### Windows-only
 
