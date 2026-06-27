@@ -12,6 +12,13 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
     - With the help of `rustls`, OpenSSL is completely not required to work.
 - Terminal frontend using [xterm.js](https://xtermjs.org/) in operator control panel.
 - OpenAPI-based HTTP/2 management API, which can be easily integrated with another web frontend.
+
+### Windows-only
+
+- Bypass Windows reinstallation ("Reset this PC" option).
+    - Cannot bypass reinstallation using a Windows installation media (USB/DVD) though. The persistence works by creating a new boot entry and setting it as default. When using an installation media, the malicious boot entry still exists, but Windows sets its legitimate boot entry as default.
+- Kernel-mode self-defense: preventing our user-mode process and its threads from being memory-written, suspended or terminated.
+- Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 - Obfuscated dropper using XOR encryption with a 64-byte key (created by hashing the build timestamp with SHA512).
     - The [dropper](rat-dropper) is just a tool rather than a system component. You can replace it with a batch script that:
         - Verify the system is using UEFI, Secure Boot is disabled.
@@ -20,12 +27,7 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
         - Drop `rat-efi` to `bootmgfw.efi`, `violet04.efi`.
         - Unmount ESP.
 
-### Windows-only
-
-- Bypass Windows reinstallation ("Reset this PC" option).
-    - Cannot bypass reinstallation using a Windows installation media (USB/DVD) though. The persistence works by creating a new boot entry and setting it as default. When using an installation media, the malicious boot entry still exists, but Windows sets its legitimate boot entry as default.
-- Kernel-mode self-defense: preventing our user-mode process and its threads from being memory-written, suspended or terminated.
-- Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
+#### Demonstration
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
 
