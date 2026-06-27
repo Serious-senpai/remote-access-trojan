@@ -7,16 +7,18 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 
 ## Features
 
-- Reverse TCP shell for both Windows and Linux.
+- Remote shell for both Windows and Linux (`conhost.exe` and `/bin/bash`).
+- TCP C&C channel with TLS encryption.
+    - With the help of `rustls`, OpenSSL is completely not required to work.
 - Terminal frontend using [xterm.js](https://xtermjs.org/) in operator control panel.
 - OpenAPI-based HTTP/2 management API, which can be easily integrated with another web frontend.
-    - With the help of `rustls`, OpenSSL is completely not required for the malware to work.
+- Obfuscated dropper using XOR encryption with a 32-byte key.
 
 ### Windows-only
 
 - Bypass Windows reinstallation ("Reset this PC" option).
     - Cannot bypass reinstallation using a Windows installation media (USB/DVD) though. The persistence works by creating a new boot entry and setting it as default. When using an installation media, the malicious boot entry still exists, but Windows sets its legitimate boot entry as default.
-- Kernel-mode self-defense: preventing our user-mode process its threads from being intervened, terminated or killed.
+- Kernel-mode self-defense: preventing our user-mode process and its threads from being memory-written, suspended or terminated.
 - Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 
 Because the trojan is executed as a Windows service, we automatically get a remote shell as *NT Authority\System*:
@@ -52,9 +54,12 @@ Refer to the [`GitHub Actions config`](/.github/workflows/build.yml) for the det
 
 ## Known limitations
 
+- No authentication nor authorization has been implemented in the management API yet.
+
 ### Windows-only
 
 - Cannot bypass UEFI Secure Boot yet, though you can refer to [this repository](https://github.com/Wack0/CVE-2022-21894) for a proof-of-concept vulnerability.
+- The C&C address is hard-coded in [`rat-driver`](rat-driver/src/global.rs). There is currently no way to dynamically set it from the dropper except modifying the embedded binary.
 
 ## Full documentation
 
