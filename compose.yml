@@ -34,7 +34,16 @@ services:
     build:
       context: .
       target: server-runtime
-    command: [ "--log-path", "/client.log", "--admin-port", "12111" ]
+    command: [
+      "--cc-port", "12110",
+      "--admin-port", "12111",
+      "--static-files-port", "12112",
+      "--log-path", "/client.log",
+      "--tls-admin-cert-path", "/certs/server.crt",
+      "--tls-admin-key-path", "/certs/server.key",
+      "--tls-cc-cert-path", "/certs/server.crt",
+      "--tls-cc-key-path", "/certs/server.key",
+    ]
     hostname: server
     image: rat-server
     ports:

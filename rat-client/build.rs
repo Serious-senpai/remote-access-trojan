@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
-use std::{env, fs};
+use std::{env, fs, time};
 
 use rcgen::string::Ia5String;
 use rcgen::{
@@ -44,7 +44,16 @@ fn server_cert(root: &CertifiedIssuer<'static, KeyPair>) -> (Certificate, KeyPai
     (params.signed_by(&server_key, root).unwrap(), server_key)
 }
 
+fn force_rebuild() {
+    unsafe {
+        env::set_var("REBUILD", format!("{:?}", time::Instant::now()));
+    }
+    println!("cargo:rerun-if-env-changed=REBUILD");
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    force_rebuild();
+
     let rat_client = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repository = rat_client.parent().unwrap();
 
