@@ -40,6 +40,8 @@ ENTRYPOINT [ "/rat-client" ]
 
 FROM alpine:3.23 AS alpine-client-runtime
 
+RUN apk add --no-cache bash
+
 COPY --from=rust-builder /app/target/x86_64-unknown-linux-musl/release/rat-client /rat-client
 ENTRYPOINT [ "/rat-client" ]
 
