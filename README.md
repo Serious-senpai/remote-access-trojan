@@ -68,8 +68,3 @@ Refer to the [`GitHub Actions config`](/.github/workflows/build.yml) for the det
 
 - Cannot bypass UEFI Secure Boot yet, though you can refer to [this repository](https://github.com/Wack0/CVE-2022-21894) for a proof-of-concept vulnerability.
 - The C&C address is hard-coded in [`rat-driver`](rat-driver/src/global.rs). There is currently no way to dynamically set it from the dropper except modifying the embedded binary.
-
-## Full documentation
-
-> [!IMPORTANT]  
-> Will be uploaded after I complete my graduation thesis.
