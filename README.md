@@ -20,12 +20,13 @@ A Remote Access Trojan (RAT) with UEFI persistence, fully implemented in Rust.
 - Kernel-mode self-defense: preventing our user-mode process and its threads from being memory-written, suspended or terminated.
 - Does not trigger [PatchGuard](https://en.wikipedia.org/wiki/Kernel_Patch_Protection).
 - Obfuscated dropper using XOR encryption with a 64-byte key (created by hashing the build timestamp with SHA512).
-    - The [dropper](rat-dropper) is just a tool rather than a system component. You can replace it with a batch script that:
+    - The [dropper](rat-dropper) is more like a tool rather than a system component. You can replace it with a batch script that:
         - Verify the system is using UEFI, Secure Boot is disabled.
         - Mount ESP.
         - Copy `bootmgfw.efi` (legitimate) to `bootmgfw_old.efi`.
         - Drop `rat-efi` to `bootmgfw.efi`, `violet04.efi`.
         - Unmount ESP.
+    - In addition to obfuscation, the dropper can write files directly to the ESP without mounting the partition, thereby reducing the likelihood of detection by monitoring systems.
 
 #### Demonstration
 

