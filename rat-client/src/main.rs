@@ -5,8 +5,6 @@ use log::info;
 use rat_client::cli::Arguments;
 use rat_client::client::Client;
 use rat_client::config::Config;
-#[cfg(windows)]
-use rat_client::service::WindowsServiceDispatcher;
 use rat_common::framework::Module;
 use rat_common::logger::initialize_logger;
 use rustls::pki_types::pem::PemObject;
@@ -34,6 +32,8 @@ async fn main() -> anyhow::Result<()> {
 
     #[cfg(windows)]
     if arguments.scm {
+        use rat_client::windows::WindowsServiceDispatcher;
+
         WindowsServiceDispatcher::start();
     }
 
