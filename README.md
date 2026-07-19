@@ -61,11 +61,23 @@ After installing the above, simply run [`scripts/build.bat`](/scripts/build.bat)
 
 Refer to the [`GitHub Actions config`](/.github/workflows/build.yml) for the detailed procedure.
 
+## Deployment
+
+- Server:
+  - Linux: `rat-server`
+  - Windows: `rat-server.exe`
+- Client:
+  - Linux: `rat-client`
+  - Windows: `rat-dropper.exe` (run as Administrator once)
+
+Note that the TLS certificate used by the server must be signed by the root certificate that is trusted by the client. Usually, the `rat-client` [build script](rat-client/build.rs) already handles this.
+
 ## Known limitations
 
 - No authentication nor authorization has been implemented in the management API yet.
 
 ### Windows-only
 
+- UEFI persistence works only on Windows 10.0.19041.
 - Cannot bypass UEFI Secure Boot yet, though you can refer to [this repository](https://github.com/Wack0/CVE-2022-21894) for a proof-of-concept vulnerability.
 - The C&C address is hard-coded in [`rat-driver`](rat-driver/src/global.rs). There is currently no way to dynamically set it from the dropper except modifying the embedded binary.
