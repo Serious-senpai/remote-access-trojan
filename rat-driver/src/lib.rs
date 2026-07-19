@@ -3,6 +3,7 @@
 extern crate alloc;
 extern crate wdk_panic;
 
+mod cleanup;
 mod driver;
 mod global;
 mod handlers;

