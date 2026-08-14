@@ -95,7 +95,7 @@ impl Drop for DisableWriteProtection {
     }
 }
 
-pub unsafe fn list_entry_to_bldr<'a>(entry: *mut _LIST_ENTRY) -> *mut _BLDR_DATA_TABLE_ENTRY {
+pub unsafe fn list_entry_to_bldr(entry: *mut _LIST_ENTRY) -> *mut _BLDR_DATA_TABLE_ENTRY {
     entry
         .wrapping_byte_sub(mem::offset_of!(_KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
         .wrapping_byte_sub(mem::offset_of!(_BLDR_DATA_TABLE_ENTRY, kldr_entry))

