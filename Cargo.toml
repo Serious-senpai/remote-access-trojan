@@ -31,6 +31,7 @@ tokio-stream = { version = "0.1.18", default-features = false }
 widestring = { version = "1.2.1", default-features = false }
 windows-service = { version = "0.8.1", default-features = false }
 windows-sys = { version = "0.61.2", default-features = false }
+winres = { version = "0.1.12", default-features = false }
 zstd = { version = "0.13.3", default-features = false }
 
 [workspace.lints.clippy]

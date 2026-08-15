@@ -1,25 +1,25 @@
 use alloc::vec;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
-use core::{mem, ptr, slice};
+use core::{mem, ptr};
 
-use rat_common::utils::DropGuard;
 use rat_common::windows::kernel::KernelHandoff;
 use rat_common::windows::{PROCESS_PROTECTED_ACCESS, THREAD_PROTECTED_ACCESS};
 use wdk::nt_success;
 use wdk_sys::_OB_PREOP_CALLBACK_STATUS::OB_PREOP_SUCCESS;
 use wdk_sys::ntddk::{
-    ExFreePool, IoGetCurrentProcess, IoThreadToProcess, ObRegisterCallbacks, PsGetCurrentProcessId,
-    RtlInitUnicodeString, SeLocateProcessImageName,
+    IoGetCurrentProcess, IoThreadToProcess, ObRegisterCallbacks, PsGetCurrentProcessId,
+    RtlInitUnicodeString,
 };
 use wdk_sys::{
     OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
-    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS, PEPROCESS,
+    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS,
     PsProcessType, PsThreadType, UNICODE_STRING,
 };
 
 use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_ACTIVATED};
 use crate::info;
+use crate::utils::match_process_name;
 
 type _ObPreOperationCallbackFn =
     unsafe extern "C" fn(*mut c_void, *mut OB_PRE_OPERATION_INFORMATION) -> i32;
@@ -89,7 +89,7 @@ unsafe extern "C" fn process_preop_callback(
             return OB_PREOP_SUCCESS;
         }
 
-        if _is_protected_process(process)
+        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
@@ -120,7 +120,7 @@ unsafe extern "C" fn thread_preop_callback(
             return OB_PREOP_SUCCESS;
         }
 
-        if _is_protected_process(process)
+        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
@@ -134,37 +134,4 @@ unsafe extern "C" fn thread_preop_callback(
     }
 
     OB_PREOP_SUCCESS
-}
-
-fn _is_protected_process(process: PEPROCESS) -> bool {
-    if process.is_null() {
-        return false;
-    }
-
-    let ac = match unsafe { OBJ_PATH_AHO_CORASICK.load(Ordering::Acquire).as_ref() } {
-        Some(ac) => ac,
-        None => return false,
-    };
-
-    let mut ctarget = ptr::null_mut();
-    let status = unsafe { SeLocateProcessImageName(process, &mut ctarget) };
-
-    if nt_success(status)
-        && let Some(target) = unsafe { ctarget.as_ref() }
-    {
-        let guard = DropGuard::new(ctarget, |s| unsafe {
-            ExFreePool(s.cast());
-        });
-
-        let target =
-            unsafe { slice::from_raw_parts(target.Buffer.cast(), usize::from(target.Length)) };
-
-        if ac.find(target).is_some() {
-            return true;
-        }
-
-        drop(guard);
-    }
-
-    false
 }

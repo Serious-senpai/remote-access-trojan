@@ -95,13 +95,20 @@ impl Drop for DisableWriteProtection {
     }
 }
 
+pub unsafe fn list_entry_to_bldr(entry: *mut _LIST_ENTRY) -> *mut _BLDR_DATA_TABLE_ENTRY {
+    entry
+        .wrapping_byte_sub(mem::offset_of!(_KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
+        .wrapping_byte_sub(mem::offset_of!(_BLDR_DATA_TABLE_ENTRY, kldr_entry))
+        .cast::<_BLDR_DATA_TABLE_ENTRY>()
+}
+
 const MODULE_NAME_MAX_LEN: usize = 32;
 
 /// Reference: https://github.com/Mattiwatti/EfiGuard/blob/801ad43372021d3806ef1be22dddfd0fb860693b/EfiGuardDxe/PatchWinload.c#L57-L79
-pub unsafe fn get_boot_loaded_module<'a>(
-    load_order_list_head: *const _LIST_ENTRY,
+unsafe fn get_boot_loaded_module_impl<'a>(
+    load_order_list_head: *mut _LIST_ENTRY,
     module_name: *const u16,
-) -> Option<&'a _BLDR_DATA_TABLE_ENTRY> {
+) -> Option<&'a mut _BLDR_DATA_TABLE_ENTRY> {
     let mut entry = load_order_list_head;
 
     let module_name = if module_name.is_null() {
@@ -123,12 +130,9 @@ pub unsafe fn get_boot_loaded_module<'a>(
                     break None;
                 }
 
-                let entry = entry
-                    .wrapping_byte_sub(mem::offset_of!(_KLDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
-                    .wrapping_byte_sub(mem::offset_of!(_BLDR_DATA_TABLE_ENTRY, kldr_entry))
-                    .cast::<_BLDR_DATA_TABLE_ENTRY>();
+                let entry = unsafe { list_entry_to_bldr(entry) };
 
-                match unsafe { entry.as_ref() } {
+                match unsafe { entry.as_mut() } {
                     Some(e) => {
                         let name = unsafe {
                             let name = (*entry).kldr_entry.BaseDllName;
@@ -173,3 +177,18 @@ pub unsafe fn get_boot_loaded_module<'a>(
         }
     }
 }
+
+pub unsafe fn get_boot_loaded_module<'a>(
+    load_order_list_head: *const _LIST_ENTRY,
+    module_name: *const u16,
+) -> Option<&'a _BLDR_DATA_TABLE_ENTRY> {
+    unsafe { get_boot_loaded_module_impl(load_order_list_head as *mut _LIST_ENTRY, module_name) }
+        .map(|e| &*e)
+}
+
+// pub unsafe fn get_boot_loaded_module_mut<'a>(
+//     load_order_list_head: *mut _LIST_ENTRY,
+//     module_name: *const u16,
+// ) -> Option<&'a mut _BLDR_DATA_TABLE_ENTRY> {
+//     unsafe { get_boot_loaded_module_impl(load_order_list_head, module_name) }
+// }

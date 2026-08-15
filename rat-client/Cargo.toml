@@ -19,6 +19,7 @@ windows-service = { workspace = true }
 
 [build-dependencies]
 rcgen = { workspace = true, features = ["crypto", "pem", "ring"] }
+winres = { workspace = true }
 
 [dependencies.windows-sys]
 workspace = true

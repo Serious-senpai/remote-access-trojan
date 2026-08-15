@@ -10,4 +10,5 @@ pub struct KernelHandoff {
     pub driver_entry: InstructionRecoveryInfo,
     pub process_preop_trampoline: *const u8,
     pub thread_preop_trampoline: *const u8,
+    pub process_notify_trampoline: *const u8,
 }

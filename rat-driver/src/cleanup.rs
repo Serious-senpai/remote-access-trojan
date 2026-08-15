@@ -1,12 +1,14 @@
 use alloc::boxed::Box;
 use core::ffi::c_void;
+use core::mem;
 
 use aho_corasick::AhoCorasick;
 use wdk::nt_success;
 use wdk_sys::ntddk::{
-    IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, RtlInitUnicodeString,
+    IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsSetCreateProcessNotifyRoutineEx,
+    RtlInitUnicodeString,
 };
-use wdk_sys::{PDEVICE_OBJECT, UNICODE_STRING};
+use wdk_sys::{HANDLE, PDEVICE_OBJECT, PEPROCESS, PPS_CREATE_NOTIFY_INFO, UNICODE_STRING};
 
 use crate::global::DOS_NAME;
 use crate::{info, warn};
@@ -24,6 +26,21 @@ pub fn cleanup_device(device: PDEVICE_OBJECT) {
             }
 
             IoDeleteDevice(device);
+        }
+    }
+}
+
+pub fn cleanup_process_notify_routine(routine: *const u8) {
+    if !routine.is_null() {
+        info!("Unregistering process notify routine: {routine:p}");
+        unsafe {
+            let _ = PsSetCreateProcessNotifyRoutineEx(
+                Some(mem::transmute::<
+                    *const u8,
+                    unsafe extern "C" fn(PEPROCESS, HANDLE, PPS_CREATE_NOTIFY_INFO),
+                >(routine)),
+                1,
+            );
         }
     }
 }
