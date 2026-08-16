@@ -26,8 +26,7 @@ fn encode_to_cloak64(data: &[u8]) -> Vec<u8> {
     let crc32 = hasher.finalize();
 
     // Allocate header + encrypted payload
-    let mut output = vec![];
-    output.resize(CLOAK64_HEADER_SIZE, 0);
+    let mut output = vec![0; CLOAK64_HEADER_SIZE];
 
     // 0x00: "ALRM"
     output[0..4].copy_from_slice(b"ALRM");
