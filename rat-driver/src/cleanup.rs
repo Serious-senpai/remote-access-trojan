@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use core::ffi::c_void;
 use core::mem;
 
@@ -11,6 +12,7 @@ use wdk_sys::ntddk::{
 use wdk_sys::{HANDLE, PDEVICE_OBJECT, PEPROCESS, PPS_CREATE_NOTIFY_INFO, UNICODE_STRING};
 
 use crate::global::DOS_NAME;
+use crate::wrappers::lock::SpinLock;
 use crate::{info, warn};
 
 pub fn cleanup_device(device: PDEVICE_OBJECT) {
@@ -26,6 +28,15 @@ pub fn cleanup_device(device: PDEVICE_OBJECT) {
             }
 
             IoDeleteDevice(device);
+        }
+    }
+}
+
+pub fn cleanup_self_defense_pids(set: *mut SpinLock<BTreeSet<HANDLE>>) {
+    if !set.is_null() {
+        info!("Cleaning up self-defense PIDs");
+        unsafe {
+            let _ = Box::from_raw(set);
         }
     }
 }

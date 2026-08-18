@@ -9,15 +9,15 @@ use wdk::nt_success;
 use wdk_sys::_OB_PREOP_CALLBACK_STATUS::OB_PREOP_SUCCESS;
 use wdk_sys::ntddk::{
     IoGetCurrentProcess, IoThreadToProcess, ObRegisterCallbacks, PsGetCurrentProcessId,
-    RtlInitUnicodeString,
+    PsGetProcessId, RtlInitUnicodeString,
 };
 use wdk_sys::{
     OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
-    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS,
+    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS, PEPROCESS,
     PsProcessType, PsThreadType, UNICODE_STRING,
 };
 
-use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_ACTIVATED};
+use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_PIDS};
 use crate::info;
 use crate::utils::match_process_name;
 
@@ -74,22 +74,32 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
     Ok(handle)
 }
 
+fn _is_protected_process(process: PEPROCESS) -> bool {
+    if let Some(lock) = unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
+        let protected_pid = {
+            let target_pid = unsafe { PsGetProcessId(process) };
+            let set = lock.lock();
+            set.contains(&target_pid)
+        };
+
+        protected_pid && match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+    } else {
+        false
+    }
+}
+
 #[unsafe(export_name = "ProcessPreopCallback")]
 unsafe extern "C" fn process_preop_callback(
     _: *mut c_void,
     info: *mut OB_PRE_OPERATION_INFORMATION,
 ) -> OB_PREOP_CALLBACK_STATUS {
-    if !SELF_DEFENSE_ACTIVATED.load(Ordering::Acquire) {
-        return OB_PREOP_SUCCESS;
-    }
-
     if let Some(info) = unsafe { info.as_mut() } {
         let process = info.Object.cast();
         if unsafe { IoGetCurrentProcess() == process } {
             return OB_PREOP_SUCCESS;
         }
 
-        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+        if _is_protected_process(process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
@@ -110,17 +120,13 @@ unsafe extern "C" fn thread_preop_callback(
     _: *mut c_void,
     info: *mut OB_PRE_OPERATION_INFORMATION,
 ) -> OB_PREOP_CALLBACK_STATUS {
-    if !SELF_DEFENSE_ACTIVATED.load(Ordering::Acquire) {
-        return OB_PREOP_SUCCESS;
-    }
-
     if let Some(info) = unsafe { info.as_mut() } {
         let process = unsafe { IoThreadToProcess(info.Object.cast()) };
         if unsafe { IoGetCurrentProcess() == process } {
             return OB_PREOP_SUCCESS;
         }
 
-        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+        if _is_protected_process(process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
