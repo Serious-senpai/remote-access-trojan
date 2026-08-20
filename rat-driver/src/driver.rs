@@ -5,7 +5,7 @@ use core::{mem, ptr};
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::nt_success;
 use wdk_sys::ntddk::PsCreateSystemThread;
-use wdk_sys::{NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};
+use wdk_sys::{HANDLE, NTSTATUS, PDRIVER_OBJECT, THREAD_ALL_ACCESS};
 use widestring::Utf16Str;
 
 use crate::global::{
@@ -50,7 +50,7 @@ pub fn driver_entry_prehook(
     extra: &KernelHandoff,
 ) -> anyhow::Result<()> {
     info!("DriverEntry: driver={driver:p}, registry_path={registry_path:?}");
-    let mut thread = ptr::null_mut();
+    let mut thread = HANDLE::default();
 
     ORIGINAL_DRIVER_OBJECT.store(driver, Ordering::Release);
     let status = unsafe {

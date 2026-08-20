@@ -2,13 +2,11 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use rat_common::utils::DropGuard;
-use rat_common::windows::{IOCTL_START_DEFENSE, IOCTL_TERMINATE};
+use rat_common::windows::{IOCTL_OPEN_PROCESS, IOCTL_START_DEFENSE, IOCTL_TERMINATE};
 use wdk::nt_success;
-use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
-    IoCreateDevice, IoCreateSymbolicLink, IofCompleteRequest, ObOpenObjectByPointer,
-    ObfDereferenceObject, PsGetCurrentProcessId, PsLookupProcessByProcessId, RtlInitUnicodeString,
-    ZwClose, ZwTerminateProcess,
+    IoCreateDevice, IoCreateSymbolicLink, IoGetCurrentProcess, IofCompleteRequest,
+    PsGetCurrentProcessId, RtlInitUnicodeString, ZwClose, ZwTerminateProcess,
 };
 use wdk_sys::{
     DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
@@ -18,7 +16,10 @@ use wdk_sys::{
 };
 
 use crate::cleanup::cleanup_device;
-use crate::global::{DEVICE_NAME, DOS_NAME, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS};
+use crate::global::{
+    DEVICE_NAME, DOS_NAME, OBJ_PATH_AHO_CORASICK, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS,
+};
+use crate::utils::{match_process_name, open_process_full_access};
 use crate::wrappers::bindings::IoGetCurrentIrpStackLocation;
 use crate::{error, info, warn};
 
@@ -141,6 +142,11 @@ fn device_control_notify(
     irp: &mut IRP,
     irpsp: &mut IO_STACK_LOCATION,
 ) -> NTSTATUS {
+    let process = unsafe { IoGetCurrentProcess() };
+    if !match_process_name(process, &OBJ_PATH_AHO_CORASICK) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
     match unsafe { irpsp.Parameters.DeviceIoControl.IoControlCode } {
         IOCTL_START_DEFENSE => {
             let pid = unsafe { PsGetCurrentProcessId() };
@@ -175,42 +181,46 @@ fn device_control_notify(
             };
 
             let pid = usize::from_le_bytes(buffer);
+            match open_process_full_access(pid as HANDLE, OBJ_KERNEL_HANDLE) {
+                Ok(process) => {
+                    let guard = DropGuard::new(process, |h| unsafe {
+                        let _ = ZwClose(h);
+                    });
 
-            let mut process = ptr::null_mut();
-            let status = unsafe { PsLookupProcessByProcessId(pid as HANDLE, &mut process) };
-            if !nt_success(status) {
-                return status;
+                    let status = unsafe { ZwTerminateProcess(process, 0) };
+
+                    drop(guard);
+                    status
+                }
+                Err(status) => status,
             }
-
-            let guard1 = DropGuard::new(process, |p| unsafe {
-                ObfDereferenceObject(p.cast());
-            });
-
-            let mut handle = ptr::null_mut();
-            let status = unsafe {
-                ObOpenObjectByPointer(
-                    process.cast(),
-                    OBJ_KERNEL_HANDLE,
-                    ptr::null_mut(),
-                    0,
-                    ptr::null_mut(),
-                    KernelMode as i8,
-                    &mut handle,
+        }
+        IOCTL_OPEN_PROCESS => {
+            let buffer = unsafe {
+                slice::from_raw_parts_mut(
+                    irp.AssociatedIrp.SystemBuffer.cast::<u8>(),
+                    irpsp.Parameters.DeviceIoControl.InputBufferLength as usize,
                 )
             };
-            if !nt_success(status) {
-                return status;
+
+            let input = match buffer.try_into() {
+                Ok(b) => b,
+                Err(_) => {
+                    return STATUS_INVALID_PARAMETER;
+                }
+            };
+
+            let pid = usize::from_le_bytes(input);
+            match open_process_full_access(pid as HANDLE, 0) {
+                Ok(handle) => {
+                    let handle = handle as usize;
+                    buffer.copy_from_slice(&handle.to_le_bytes());
+                    irp.IoStatus.Information = size_of::<usize>() as u64;
+
+                    STATUS_SUCCESS
+                }
+                Err(status) => status,
             }
-
-            let guard2 = DropGuard::new(handle, |h| unsafe {
-                let _ = ZwClose(h);
-            });
-
-            let status = unsafe { ZwTerminateProcess(handle, 0) };
-
-            drop(guard2);
-            drop(guard1);
-            status
         }
         code => {
             error!("Unknown IOCTL code: 0x{code:X}");

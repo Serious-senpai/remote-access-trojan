@@ -12,14 +12,13 @@ use wdk_sys::ntddk::{
     PsGetProcessId, RtlInitUnicodeString,
 };
 use wdk_sys::{
-    OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
+    HANDLE, OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
     OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS, PEPROCESS,
     PsProcessType, PsThreadType, UNICODE_STRING,
 };
 
-use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_PIDS};
+use crate::global::{ALTITUDE, SELF_DEFENSE_PIDS};
 use crate::info;
-use crate::utils::match_process_name;
 
 type _ObPreOperationCallbackFn =
     unsafe extern "C" fn(*mut c_void, *mut OB_PRE_OPERATION_INFORMATION) -> i32;
@@ -64,7 +63,7 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
         OperationRegistration: object_operations.as_mut_ptr(),
     };
 
-    let mut handle = ptr::null_mut();
+    let mut handle = HANDLE::default();
     let status = unsafe { ObRegisterCallbacks(&mut object_callbacks, &mut handle) };
     anyhow::ensure!(
         nt_success(status),
@@ -76,13 +75,9 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
 
 fn _is_protected_process(process: PEPROCESS) -> bool {
     if let Some(lock) = unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
-        let protected_pid = {
-            let target_pid = unsafe { PsGetProcessId(process) };
-            let set = lock.lock();
-            set.contains(&target_pid)
-        };
-
-        protected_pid && match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+        let target_pid = unsafe { PsGetProcessId(process) };
+        let set = lock.lock();
+        set.contains(&target_pid)
     } else {
         false
     }
