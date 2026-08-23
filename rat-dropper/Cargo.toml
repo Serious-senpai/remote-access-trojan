@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 rat-common = { path = "../rat-common" }
+clap = { workspace = true, features = ["cargo", "derive", "error-context", "help", "usage"] }
+serde_json = { workspace = true }
 zstd = { workspace = true }
 
 [dependencies.windows-sys]

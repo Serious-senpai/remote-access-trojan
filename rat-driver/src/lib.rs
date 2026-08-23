@@ -3,13 +3,12 @@
 extern crate alloc;
 extern crate wdk_panic;
 
-mod cleanup;
 mod driver;
 mod global;
 mod handlers;
+mod initialize;
 mod logger;
 mod string;
-mod threads;
 mod utils;
 mod wrappers;
 

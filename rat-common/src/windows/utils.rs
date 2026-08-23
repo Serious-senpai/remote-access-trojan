@@ -1,5 +1,7 @@
 use core::arch::global_asm;
 
+use windows_sys::core::GUID;
+
 use crate::utils::get_function_code;
 
 /// Overwrite instructions at `target` with `patched`.
@@ -128,4 +130,11 @@ unsafe extern "win64" {
 
 pub fn return_one_patch() -> &'static [u8] {
     unsafe { get_function_code(ReturnOne as *const u8, ReturnOneEnd as *const u8) }
+}
+
+pub fn is_equal_guid(guid1: &GUID, guid2: &GUID) -> bool {
+    guid1.data1 == guid2.data1
+        && guid1.data2 == guid2.data2
+        && guid1.data3 == guid2.data3
+        && guid1.data4 == guid2.data4
 }

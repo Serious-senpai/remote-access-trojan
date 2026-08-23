@@ -15,10 +15,10 @@ use wdk_sys::{
     STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING,
 };
 
-use crate::cleanup::cleanup_device;
 use crate::global::{
     DEVICE_NAME, DOS_NAME, OBJ_PATH_AHO_CORASICK, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS,
 };
+use crate::initialize::cleanup::cleanup_device;
 use crate::utils::{match_process_name, open_process_full_access};
 use crate::wrappers::bindings::IoGetCurrentIrpStackLocation;
 use crate::{error, info, warn};

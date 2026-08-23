@@ -10,6 +10,7 @@ use wdk_sys::ntddk::{
     SeLocateProcessImageName,
 };
 use wdk_sys::{HANDLE, NTSTATUS, PEPROCESS, PROCESS_ALL_ACCESS, ULONG};
+use windows_sys::core::GUID;
 
 pub fn match_process_name(process: PEPROCESS, ac: &AtomicPtr<AhoCorasick>) -> bool {
     if process.is_null() {
@@ -76,4 +77,13 @@ pub fn open_process_full_access(
 
     drop(guard);
     Ok(handle)
+}
+
+pub fn windows_to_wdk_guid(guid: GUID) -> wdk_sys::GUID {
+    wdk_sys::GUID {
+        Data1: guid.data1,
+        Data2: guid.data2,
+        Data3: guid.data3,
+        Data4: guid.data4,
+    }
 }

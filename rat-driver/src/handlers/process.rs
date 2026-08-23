@@ -37,7 +37,7 @@ pub fn ps_set_create_process_notify_routine_ex(extra: &KernelHandoff) -> anyhow:
 
 unsafe extern "C" fn _bugcheck_on_exit(_: *mut c_void) {
     let mut sleep = LARGE_INTEGER {
-        QuadPart: -100000000, // 10s
+        QuadPart: -300000000, // 30s
     };
     unsafe {
         let _ = KeDelayExecutionThread(KernelMode as i8, 0, &mut sleep);

