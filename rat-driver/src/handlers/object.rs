@@ -12,18 +12,19 @@ use wdk_sys::ntddk::{
     PsGetProcessId, RtlInitUnicodeString,
 };
 use wdk_sys::{
-    HANDLE, OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
-    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS, PEPROCESS,
-    PsProcessType, PsThreadType, UNICODE_STRING,
+    HANDLE, NTSTATUS, OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION,
+    OB_OPERATION_HANDLE_CREATE, OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION,
+    OB_PREOP_CALLBACK_STATUS, PEPROCESS, PsProcessType, PsThreadType, UNICODE_STRING,
 };
 
-use crate::global::{ALTITUDE, SELF_DEFENSE_PIDS};
-use crate::info;
+use crate::global::ALTITUDE;
+use crate::state::DRIVER_STATE;
+use crate::{error, info};
 
 type _ObPreOperationCallbackFn =
     unsafe extern "C" fn(*mut c_void, *mut OB_PRE_OPERATION_INFORMATION) -> i32;
 
-pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void> {
+pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void, NTSTATUS> {
     let mut altitude = UNICODE_STRING::default();
     unsafe {
         RtlInitUnicodeString(&mut altitude, ALTITUDE.as_ptr());
@@ -65,19 +66,22 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
 
     let mut handle = HANDLE::default();
     let status = unsafe { ObRegisterCallbacks(&mut object_callbacks, &mut handle) };
-    anyhow::ensure!(
-        nt_success(status),
-        "ObRegisterCallbacks error: 0x{status:X}",
-    );
+    if !nt_success(status) {
+        error!("ObRegisterCallbacks error: 0x{status:X}");
+        return Err(status);
+    }
 
     Ok(handle)
 }
 
 fn _is_protected_process(process: PEPROCESS) -> bool {
-    if let Some(lock) = unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
+    let state = DRIVER_STATE.load(Ordering::Acquire);
+    if let Some(state) = unsafe { state.as_ref() }
+        && let Some(lock) = unsafe { state.protected_pids().as_ref() }
+    {
         let target_pid = unsafe { PsGetProcessId(process) };
-        let set = lock.lock();
-        set.contains(&target_pid)
+        let guard = lock.lock();
+        guard.contains(&target_pid)
     } else {
         false
     }

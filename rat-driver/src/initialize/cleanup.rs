@@ -1,9 +1,6 @@
-use alloc::boxed::Box;
-use alloc::collections::BTreeSet;
 use core::ffi::c_void;
 use core::mem;
 
-use aho_corasick::AhoCorasick;
 use wdk::nt_success;
 use wdk_sys::ntddk::{
     IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsSetCreateProcessNotifyRoutineEx,
@@ -12,7 +9,6 @@ use wdk_sys::ntddk::{
 use wdk_sys::{HANDLE, PDEVICE_OBJECT, PEPROCESS, PPS_CREATE_NOTIFY_INFO, UNICODE_STRING};
 
 use crate::global::DOS_NAME;
-use crate::wrappers::lock::SpinLock;
 use crate::{info, warn};
 
 pub fn cleanup_device(device: PDEVICE_OBJECT) {
@@ -28,15 +24,6 @@ pub fn cleanup_device(device: PDEVICE_OBJECT) {
             }
 
             IoDeleteDevice(device);
-        }
-    }
-}
-
-pub fn cleanup_self_defense_pids(set: *mut SpinLock<BTreeSet<HANDLE>>) {
-    if !set.is_null() {
-        info!("Cleaning up self-defense PIDs");
-        unsafe {
-            let _ = Box::from_raw(set);
         }
     }
 }
@@ -61,15 +48,6 @@ pub fn cleanup_object_callbacks(handle: *mut c_void) {
         info!("Unregistering object callbacks");
         unsafe {
             ObUnRegisterCallbacks(handle);
-        }
-    }
-}
-
-pub fn cleanup_aho_corasick(ac: *mut AhoCorasick) {
-    if !ac.is_null() {
-        info!("Dropping Aho-Corasick automaton");
-        unsafe {
-            let _ = Box::from_raw(ac);
         }
     }
 }

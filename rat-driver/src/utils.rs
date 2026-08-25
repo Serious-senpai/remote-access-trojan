@@ -1,4 +1,3 @@
-use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{ptr, slice};
 
 use aho_corasick::AhoCorasick;
@@ -12,12 +11,12 @@ use wdk_sys::ntddk::{
 use wdk_sys::{HANDLE, NTSTATUS, PEPROCESS, PROCESS_ALL_ACCESS, ULONG};
 use windows_sys::core::GUID;
 
-pub fn match_process_name(process: PEPROCESS, ac: &AtomicPtr<AhoCorasick>) -> bool {
+pub fn match_process_name(process: PEPROCESS, ac: *const AhoCorasick) -> bool {
     if process.is_null() {
         return false;
     }
 
-    let ac = match unsafe { ac.load(Ordering::Acquire).as_ref() } {
+    let ac = match unsafe { ac.as_ref() } {
         Some(ac) => ac,
         None => return false,
     };

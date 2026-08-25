@@ -8,13 +8,17 @@ use wdk_sys::_MODE::KernelMode;
 use wdk_sys::ntddk::{
     KeBugCheckEx, KeDelayExecutionThread, PsCreateSystemThread, PsSetCreateProcessNotifyRoutineEx,
 };
-use wdk_sys::{HANDLE, LARGE_INTEGER, PEPROCESS, PPS_CREATE_NOTIFY_INFO, STATUS_ACCESS_DENIED};
+use wdk_sys::{
+    HANDLE, LARGE_INTEGER, NTSTATUS, PEPROCESS, PPS_CREATE_NOTIFY_INFO, STATUS_ACCESS_DENIED,
+};
 
-use crate::global::{MS_DEFENDER_AHO_CORASICK, SELF_DEFENSE_PIDS};
-use crate::info;
+use crate::state::DRIVER_STATE;
 use crate::utils::match_process_name;
+use crate::{error, info};
 
-pub fn ps_set_create_process_notify_routine_ex(extra: &KernelHandoff) -> anyhow::Result<*const u8> {
+pub fn ps_set_create_process_notify_routine_ex(
+    extra: &KernelHandoff,
+) -> anyhow::Result<*const u8, NTSTATUS> {
     if !extra.process_notify_trampoline.is_null() {
         let status = unsafe {
             PsSetCreateProcessNotifyRoutineEx(
@@ -26,10 +30,10 @@ pub fn ps_set_create_process_notify_routine_ex(extra: &KernelHandoff) -> anyhow:
             )
         };
 
-        anyhow::ensure!(
-            nt_success(status),
-            "PsSetCreateProcessNotifyRoutineEx error: 0x{status:X}",
-        );
+        if !nt_success(status) {
+            error!("PsSetCreateProcessNotifyRoutineEx error: 0x{status:X}");
+            return Err(status);
+        }
     }
 
     Ok(extra.process_notify_trampoline)
@@ -54,28 +58,31 @@ unsafe extern "C" fn process_notify_routine(
     pid: HANDLE,
     info: PPS_CREATE_NOTIFY_INFO,
 ) {
-    if let Some(info) = unsafe { info.as_mut() } {
-        // Process creation
-        if match_process_name(process, &MS_DEFENDER_AHO_CORASICK) {
-            info!("Blocking creation of process {}", pid as u64);
-            info.CreationStatus = STATUS_ACCESS_DENIED;
-        }
-    } else {
-        // Process deletion
-        if let Some(lock) = unsafe { SELF_DEFENSE_PIDS.load(Ordering::Acquire).as_ref() } {
-            let set = lock.lock();
-            if set.contains(&pid) {
-                let mut thread = HANDLE::default();
-                unsafe {
-                    let _ = PsCreateSystemThread(
-                        &mut thread,
-                        0,
-                        ptr::null_mut(),
-                        ptr::null_mut(),
-                        ptr::null_mut(),
-                        Some(_bugcheck_on_exit),
-                        ptr::null_mut(),
-                    );
+    let state = DRIVER_STATE.load(Ordering::Acquire);
+    if let Some(state) = unsafe { state.as_ref() } {
+        if let Some(info) = unsafe { info.as_mut() } {
+            // Process creation
+            if match_process_name(process, state.blocked_process_ac()) {
+                info!("Blocking creation of process {}", pid as u64);
+                info.CreationStatus = STATUS_ACCESS_DENIED;
+            }
+        } else {
+            // Process deletion
+            if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
+                let guard = lock.lock();
+                if guard.contains(&pid) {
+                    let mut thread = HANDLE::default();
+                    unsafe {
+                        let _ = PsCreateSystemThread(
+                            &mut thread,
+                            0,
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                            ptr::null_mut(),
+                            Some(_bugcheck_on_exit),
+                            ptr::null_mut(),
+                        );
+                    }
                 }
             }
         }
