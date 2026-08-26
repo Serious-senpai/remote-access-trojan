@@ -11,6 +11,7 @@ libc = { workspace = true }
 log = { workspace = true }
 postcard = { workspace = true, features = ["use-std"] }
 rat-common = { path = "../rat-common" }
+rand = { workspace = true, features = ["sys_rng"] }
 rustls = { workspace = true, features = ["aws-lc-rs"] }
 sysinfo = { workspace = true, features = ["system"] }
 tokio = { workspace = true, features = ["io-util", "net", "process", "rt-multi-thread", "signal", "time"] }
