@@ -18,11 +18,20 @@ com_logger = { version = "0.1.2", default-features = false }
 const_format = { version = "0.2.36", default-features = false }
 log = { version = "0.4.32", default-features = false }
 rat-common = { path = "../rat-common", default-features = false }
+serde_json = { version = "1.0.151", default-features = false, features = ["alloc"] }
 wdk = { version = "0.4.1", default-features = false, features = ["alloc"] }
 wdk-alloc = { version = "0.4.1", default-features = false }
 wdk-panic = { version = "0.4.1", default-features = false }
 wdk-sys = { version = "0.5.1", default-features = false }
 widestring = { version = "1.2.1", default-features = false, features = ["alloc"] }
+
+[dependencies.windows-sys]
+version = "0.61.2"
+default-features = false
+features = [
+    "Win32_Storage",
+        "Win32_Storage_FileSystem",
+]
 
 [build-dependencies]
 wdk-build = { version = "0.5.1", default-features = false }

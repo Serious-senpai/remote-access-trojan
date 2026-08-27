@@ -1,8 +1,6 @@
-use alloc::boxed::Box;
 use core::ffi::c_void;
 use core::mem;
 
-use aho_corasick::AhoCorasick;
 use wdk::nt_success;
 use wdk_sys::ntddk::{
     IoDeleteDevice, IoDeleteSymbolicLink, ObUnRegisterCallbacks, PsSetCreateProcessNotifyRoutineEx,
@@ -50,15 +48,6 @@ pub fn cleanup_object_callbacks(handle: *mut c_void) {
         info!("Unregistering object callbacks");
         unsafe {
             ObUnRegisterCallbacks(handle);
-        }
-    }
-}
-
-pub fn cleanup_aho_corasick(ac: *mut AhoCorasick) {
-    if !ac.is_null() {
-        info!("Dropping Aho-Corasick automaton");
-        unsafe {
-            let _ = Box::from_raw(ac);
         }
     }
 }

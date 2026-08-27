@@ -57,8 +57,18 @@ pub struct ClientMessage {
     pub data: ClientMessageData,
 }
 
+impl ClientMessage {
+    pub fn new(data: ClientMessageData) -> Self {
+        Self {
+            id: SnowflakeId::new(),
+            data,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum ClientMessageData {
+    Nop,
     Error {
         message: String,
     },

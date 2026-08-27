@@ -9,22 +9,22 @@ use wdk::nt_success;
 use wdk_sys::_OB_PREOP_CALLBACK_STATUS::OB_PREOP_SUCCESS;
 use wdk_sys::ntddk::{
     IoGetCurrentProcess, IoThreadToProcess, ObRegisterCallbacks, PsGetCurrentProcessId,
-    RtlInitUnicodeString,
+    PsGetProcessId, RtlInitUnicodeString,
 };
 use wdk_sys::{
-    OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION, OB_OPERATION_HANDLE_CREATE,
-    OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION, OB_PREOP_CALLBACK_STATUS,
-    PsProcessType, PsThreadType, UNICODE_STRING,
+    HANDLE, NTSTATUS, OB_CALLBACK_REGISTRATION, OB_FLT_REGISTRATION_VERSION,
+    OB_OPERATION_HANDLE_CREATE, OB_OPERATION_REGISTRATION, OB_PRE_OPERATION_INFORMATION,
+    OB_PREOP_CALLBACK_STATUS, PEPROCESS, PsProcessType, PsThreadType, UNICODE_STRING,
 };
 
-use crate::global::{ALTITUDE, OBJ_PATH_AHO_CORASICK, SELF_DEFENSE_ACTIVATED};
-use crate::info;
-use crate::utils::match_process_name;
+use crate::global::ALTITUDE;
+use crate::state::DRIVER_STATE;
+use crate::{error, info};
 
 type _ObPreOperationCallbackFn =
     unsafe extern "C" fn(*mut c_void, *mut OB_PRE_OPERATION_INFORMATION) -> i32;
 
-pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void> {
+pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_void, NTSTATUS> {
     let mut altitude = UNICODE_STRING::default();
     unsafe {
         RtlInitUnicodeString(&mut altitude, ALTITUDE.as_ptr());
@@ -64,14 +64,27 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
         OperationRegistration: object_operations.as_mut_ptr(),
     };
 
-    let mut handle = ptr::null_mut();
+    let mut handle = HANDLE::default();
     let status = unsafe { ObRegisterCallbacks(&mut object_callbacks, &mut handle) };
-    anyhow::ensure!(
-        nt_success(status),
-        "ObRegisterCallbacks error: 0x{status:X}",
-    );
+    if !nt_success(status) {
+        error!("ObRegisterCallbacks error: 0x{status:X}");
+        return Err(status);
+    }
 
     Ok(handle)
+}
+
+fn _is_protected_process(process: PEPROCESS) -> bool {
+    let state = DRIVER_STATE.load(Ordering::Acquire);
+    if let Some(state) = unsafe { state.as_ref() }
+        && let Some(lock) = unsafe { state.protected_pids().as_ref() }
+    {
+        let target_pid = unsafe { PsGetProcessId(process) };
+        let guard = lock.lock();
+        guard.contains(&target_pid)
+    } else {
+        false
+    }
 }
 
 #[unsafe(export_name = "ProcessPreopCallback")]
@@ -79,17 +92,13 @@ unsafe extern "C" fn process_preop_callback(
     _: *mut c_void,
     info: *mut OB_PRE_OPERATION_INFORMATION,
 ) -> OB_PREOP_CALLBACK_STATUS {
-    if !SELF_DEFENSE_ACTIVATED.load(Ordering::Acquire) {
-        return OB_PREOP_SUCCESS;
-    }
-
     if let Some(info) = unsafe { info.as_mut() } {
         let process = info.Object.cast();
         if unsafe { IoGetCurrentProcess() == process } {
             return OB_PREOP_SUCCESS;
         }
 
-        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+        if _is_protected_process(process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
@@ -110,17 +119,13 @@ unsafe extern "C" fn thread_preop_callback(
     _: *mut c_void,
     info: *mut OB_PRE_OPERATION_INFORMATION,
 ) -> OB_PREOP_CALLBACK_STATUS {
-    if !SELF_DEFENSE_ACTIVATED.load(Ordering::Acquire) {
-        return OB_PREOP_SUCCESS;
-    }
-
     if let Some(info) = unsafe { info.as_mut() } {
         let process = unsafe { IoThreadToProcess(info.Object.cast()) };
         if unsafe { IoGetCurrentProcess() == process } {
             return OB_PREOP_SUCCESS;
         }
 
-        if match_process_name(process, &OBJ_PATH_AHO_CORASICK)
+        if _is_protected_process(process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };

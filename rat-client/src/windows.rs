@@ -89,11 +89,14 @@ impl WindowsServiceDispatcher {
                     0,
                     ptr::null_mut(),
                     ptr::null_mut(),
-                ) == 0
+                ) != 0
             } {
-                warn!("Failed to send IOCTL to driver: 0x{:X}", unsafe {
-                    GetLastError()
-                });
+                info!("Sent IOCTL 0x{IOCTL_START_DEFENSE:X} to driver");
+            } else {
+                warn!(
+                    "Failed to send IOCTL 0x{IOCTL_START_DEFENSE:X} to driver: 0x{:X}",
+                    unsafe { GetLastError() },
+                );
             }
 
             drop(guard);

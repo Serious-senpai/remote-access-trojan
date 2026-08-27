@@ -16,7 +16,7 @@ const ROOT_CA: &[u8] = include_bytes!("../../certs/root.crt");
 async fn beacon(config: Config) -> Option<Arc<Client>> {
     tokio::select! {
         client = Client::connect(config) => {
-            Some(Arc::new(client))
+            Some(client)
         }
         _ = signal::ctrl_c() => {
             info!("Received Ctrl-C signal during beaconing.");
