@@ -68,21 +68,25 @@ unsafe extern "C" fn process_notify_routine(
             }
         } else {
             // Process deletion
-            if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
+            let bugcheck = if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
                 let guard = lock.lock();
-                if guard.contains(&pid) {
-                    let mut thread = HANDLE::default();
-                    unsafe {
-                        let _ = PsCreateSystemThread(
-                            &mut thread,
-                            0,
-                            ptr::null_mut(),
-                            ptr::null_mut(),
-                            ptr::null_mut(),
-                            Some(_bugcheck_on_exit),
-                            ptr::null_mut(),
-                        );
-                    }
+                guard.contains(&pid)
+            } else {
+                false
+            };
+
+            if bugcheck {
+                let mut thread = HANDLE::default();
+                unsafe {
+                    let _ = PsCreateSystemThread(
+                        &mut thread,
+                        0,
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        Some(_bugcheck_on_exit),
+                        ptr::null_mut(),
+                    );
                 }
             }
         }
