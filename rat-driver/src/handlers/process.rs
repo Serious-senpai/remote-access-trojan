@@ -69,7 +69,7 @@ unsafe extern "C" fn process_notify_routine(
         } else {
             // Process deletion
             let bugcheck = if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
-                let guard = lock.lock();
+                let guard = lock.read();
                 guard.contains(&pid)
             } else {
                 false

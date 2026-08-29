@@ -162,7 +162,7 @@ fn device_control_notify(
                     match unsafe { protected_pids.as_ref() } {
                         Some(lock) => {
                             info!("Activating self-defense for process {}", pid as usize);
-                            let mut guard = lock.lock();
+                            let mut guard = lock.write();
                             guard.insert(pid);
 
                             STATUS_SUCCESS

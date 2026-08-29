@@ -80,7 +80,7 @@ fn _is_protected_process(process: PEPROCESS) -> bool {
         && let Some(lock) = unsafe { state.protected_pids().as_ref() }
     {
         let target_pid = unsafe { PsGetProcessId(process) };
-        let guard = lock.lock();
+        let guard = lock.read();
         guard.contains(&target_pid)
     } else {
         false

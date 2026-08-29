@@ -14,7 +14,7 @@ use crate::error;
 use crate::global::{BLOCKED_PROCESS_PATTERN, USER_SERVICE_SD};
 use crate::handlers::{device, object, process};
 use crate::initialize::cleanup;
-use crate::wrappers::lock::SpinLock;
+use crate::wrappers::lock::ExSpinLock;
 
 /// Interpret as a `&[u8]` slice for aho-corasick
 fn _u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
@@ -29,7 +29,7 @@ fn _u16cstr_to_buf(u16cstr: &U16CStr) -> &[u8] {
 pub struct DriverState {
     _blocked_process_ac: AtomicPtr<AhoCorasick>,
     _protected_process_ac: AtomicPtr<AhoCorasick>,
-    _protected_pids: AtomicPtr<SpinLock<BTreeSet<HANDLE>>>,
+    _protected_pids: AtomicPtr<ExSpinLock<BTreeSet<HANDLE>>>,
 
     _ob_register_callbacks_handle: AtomicPtr<c_void>,
     _process_notify_routine: AtomicPtr<u8>,
@@ -71,7 +71,7 @@ impl DriverState {
             })?;
         this._protected_process_ac = AtomicPtr::new(Box::into_raw(Box::new(protected_process_ac)));
 
-        let protected_pids = Box::new(SpinLock::new(BTreeSet::new()));
+        let protected_pids = Box::new(ExSpinLock::new(BTreeSet::new()));
         this._protected_pids = AtomicPtr::new(Box::into_raw(protected_pids));
 
         let ob_register_callbacks_handle = object::ob_register_callbacks(extra)?;
@@ -94,7 +94,7 @@ impl DriverState {
         self._protected_process_ac.load(Ordering::Acquire)
     }
 
-    pub fn protected_pids(&self) -> *const SpinLock<BTreeSet<HANDLE>> {
+    pub fn protected_pids(&self) -> *const ExSpinLock<BTreeSet<HANDLE>> {
         self._protected_pids.load(Ordering::Acquire)
     }
 
