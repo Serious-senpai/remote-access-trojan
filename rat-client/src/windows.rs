@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use rat_common::utils::DropGuard;
-use rat_common::windows::{DRIVER_USER_OBJECT, IOCTL_START_DEFENSE, RAT_CLIENT_SERVICE_NAME};
+use rat_common::windows::{DRIVER_USER_OBJECT, IOCTL_PROCESS_STARTED, RAT_CLIENT_SERVICE_NAME};
 use tokio::task;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
@@ -82,7 +82,7 @@ impl WindowsServiceDispatcher {
             if unsafe {
                 DeviceIoControl(
                     driver,
-                    IOCTL_START_DEFENSE,
+                    IOCTL_PROCESS_STARTED,
                     ptr::null_mut(),
                     0,
                     ptr::null_mut(),
@@ -91,10 +91,10 @@ impl WindowsServiceDispatcher {
                     ptr::null_mut(),
                 ) != 0
             } {
-                info!("Sent IOCTL 0x{IOCTL_START_DEFENSE:X} to driver");
+                info!("Sent IOCTL 0x{IOCTL_PROCESS_STARTED:X} to driver");
             } else {
                 warn!(
-                    "Failed to send IOCTL 0x{IOCTL_START_DEFENSE:X} to driver: 0x{:X}",
+                    "Failed to send IOCTL 0x{IOCTL_PROCESS_STARTED:X} to driver: 0x{:X}",
                     unsafe { GetLastError() },
                 );
             }

