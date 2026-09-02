@@ -18,7 +18,7 @@ use wdk_sys::{
 };
 
 use crate::global::ALTITUDE;
-use crate::state::DRIVER_STATE;
+use crate::state::{DRIVER_STATE, DriverState};
 use crate::{error, info};
 
 type _ObPreOperationCallbackFn =
@@ -74,11 +74,8 @@ pub fn ob_register_callbacks(extra: &KernelHandoff) -> anyhow::Result<*mut c_voi
     Ok(handle)
 }
 
-fn _is_protected_process(process: PEPROCESS) -> bool {
-    let state = DRIVER_STATE.load(Ordering::Acquire);
-    if let Some(state) = unsafe { state.as_ref() }
-        && let Some(lock) = unsafe { state.protected_pids().as_ref() }
-    {
+fn _is_protected_process(state: &DriverState, process: PEPROCESS) -> bool {
+    if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
         let target_pid = unsafe { PsGetProcessId(process) };
         let guard = lock.read();
         guard.contains(&target_pid)
@@ -98,7 +95,10 @@ unsafe extern "C" fn process_preop_callback(
             return OB_PREOP_SUCCESS;
         }
 
-        if _is_protected_process(process)
+        let state = DRIVER_STATE.load(Ordering::Acquire);
+        if let Some(state) = unsafe { state.as_ref() }
+            && !state.disable_sd()
+            && _is_protected_process(state, process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };
@@ -125,7 +125,10 @@ unsafe extern "C" fn thread_preop_callback(
             return OB_PREOP_SUCCESS;
         }
 
-        if _is_protected_process(process)
+        let state = DRIVER_STATE.load(Ordering::Acquire);
+        if let Some(state) = unsafe { state.as_ref() }
+            && !state.disable_sd()
+            && _is_protected_process(state, process)
             && let Some(parameters) = unsafe { info.Parameters.as_mut() }
         {
             let access = unsafe { &mut parameters.CreateHandleInformation.DesiredAccess };

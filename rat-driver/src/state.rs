@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use core::ffi::c_void;
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use core::{mem, ptr, slice};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
@@ -34,22 +34,29 @@ pub struct DriverState {
     _ob_register_callbacks_handle: AtomicPtr<c_void>,
     _process_notify_routine: AtomicPtr<u8>,
     _device_object: AtomicPtr<DEVICE_OBJECT>,
+
+    _disable_wd: AtomicBool,
+    _disable_sd: AtomicBool,
 }
 
 impl DriverState {
-    const fn _dummy() -> Self {
-        Self {
+    pub fn new(driver: PDRIVER_OBJECT, extra: &KernelHandoff) -> anyhow::Result<Self, NTSTATUS> {
+        let mut this = Self {
             _blocked_process_ac: AtomicPtr::new(ptr::null_mut()),
             _protected_process_ac: AtomicPtr::new(ptr::null_mut()),
             _protected_pids: AtomicPtr::new(ptr::null_mut()),
             _ob_register_callbacks_handle: AtomicPtr::new(ptr::null_mut()),
             _process_notify_routine: AtomicPtr::new(ptr::null_mut()),
             _device_object: AtomicPtr::new(ptr::null_mut()),
-        }
-    }
-
-    pub fn new(driver: PDRIVER_OBJECT, extra: &KernelHandoff) -> anyhow::Result<Self, NTSTATUS> {
-        let mut this = Self::_dummy();
+            // We set _disable_wd to true initially. If this flag is updated to false later, Windows Defender service
+            // will automatically restart themselves. On the other hand, if this flag is initially set to false, Windows
+            // Defender may start before the flag is switched, thus our process creation callback will not be able
+            // to block the user-mode services.
+            _disable_wd: AtomicBool::new(true),
+            // We set _disable_sd to false initially. Applications that try to access our protected processes can simply
+            // wait for this flag to be updated to true.
+            _disable_sd: AtomicBool::new(false),
+        };
 
         let blocked_process_ac = AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
@@ -100,6 +107,24 @@ impl DriverState {
 
     pub fn device_object(&self) -> PDEVICE_OBJECT {
         self._device_object.load(Ordering::Acquire)
+    }
+
+    pub fn set_disable_wd(&self, disable: bool) {
+        self._disable_wd.store(disable, Ordering::Release);
+    }
+
+    /// Is Windows Defender disabled?
+    pub fn disable_wd(&self) -> bool {
+        self._disable_wd.load(Ordering::Acquire)
+    }
+
+    pub fn set_disable_sd(&self, disable: bool) {
+        self._disable_sd.store(disable, Ordering::Release);
+    }
+
+    /// Is process self-defense disabled?
+    pub fn disable_sd(&self) -> bool {
+        self._disable_sd.load(Ordering::Acquire)
     }
 }
 

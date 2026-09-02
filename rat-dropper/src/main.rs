@@ -188,13 +188,17 @@ fn main() {
                 }
             }
 
-            let config = bootdir.join("config.json");
+            let config = bootdir.join("violet.json");
             match fs::File::create(&config) {
                 Ok(mut f) => {
                     if let Err(e) = serde_json::to_writer_pretty(
                         &mut f,
                         &Config {
-                            argument: arguments.argument,
+                            host: arguments.host,
+                            log_level: arguments.log_level,
+                            log_path: arguments.log_path,
+                            disable_wd: arguments.disable_wd,
+                            disable_sd: arguments.disable_sd,
                         },
                     ) {
                         eprintln!("Failed to write config to {config:?}: {e}");

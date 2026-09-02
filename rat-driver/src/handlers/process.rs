@@ -62,11 +62,11 @@ unsafe extern "C" fn process_notify_routine(
     if let Some(state) = unsafe { state.as_ref() } {
         if let Some(info) = unsafe { info.as_mut() } {
             // Process creation
-            if match_process_name(process, state.blocked_process_ac()) {
+            if state.disable_wd() && match_process_name(process, state.blocked_process_ac()) {
                 info!("Blocking creation of process {}", pid as u64);
                 info.CreationStatus = STATUS_ACCESS_DENIED;
             }
-        } else {
+        } else if !state.disable_sd() {
             // Process deletion
             let bugcheck = if let Some(lock) = unsafe { state.protected_pids().as_ref() } {
                 let guard = lock.read();
